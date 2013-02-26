@@ -49,7 +49,7 @@ class ChangeTrackingList(list):
         return super(ChangeTrackingList, self).extend(*args, **kwargs)
 
     def insert(self, *args, **kwargs):
-        print "tracking list - insert"
+        #print "tracking list - insert"
         self._mark_as_changed()
         return super(ChangeTrackingList, self).insert(*args, **kwargs)
 

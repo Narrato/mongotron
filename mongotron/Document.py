@@ -269,8 +269,6 @@ class Document(object):
             if attr is None:
                 value_type = self.structure.get(key, None)
                 
-                print value_type
-
                 #TODO: make this awesome please
                 if isinstance( value_type, set ):
                     attr = set()
