@@ -68,6 +68,8 @@ class DocumentMeta(type):
 class Document(object):
     __metaclass__ = DocumentMeta
 
+    __should_explain = False
+
     __internalfields = ['_Document__attributes', '_Document__ops', '_Document__operations']
     
     structure = {
@@ -549,11 +551,15 @@ class Document(object):
             args[0] = cls.map_search_dict(args[0])
 
         cursor = cls.collection.find(*args,**kwargs)
+        
+        if cls.__should_explain:
+            print cursor.explain()
+
         return Cursor(cls, cursor)
 
     # you can pass an ObjectId in and it'll auto-search on the _id field!
     @classmethod
-    def find_one(cls, *args, **kwargs):
+    def find_one(cls, spec_or_id=None, *args, **kwargs):
         if 'spec' in kwargs:
             kwargs['spec'] = cls.map_search_dict(kwargs['spec'])
 
@@ -562,11 +568,17 @@ class Document(object):
             args[0] = cls.map_search_dict(args[0])
 
         collection = cls.collection
-        thing = collection.find_one(*args,**kwargs)
+        #thing = collection.find_one(*args,**kwargs)
 
-        if not thing:
-            return None
-        return cls(doc=thing)
+        if spec_or_id is not None and not isinstance(spec_or_id, dict):
+            spec_or_id = {"_id": spec_or_id}
+
+        for result in cls.find(spec_or_id, *args, **kwargs).limit(-1):
+            return result
+
+        #if not thing:
+        #    return None
+        #return cls(doc=thing)
 
     # get a document by a specific id
     # this is mapped to the _id field
