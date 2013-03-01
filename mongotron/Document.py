@@ -333,11 +333,14 @@ class Document(object):
         # then if the contents is a subclass of Document
         # then transport that to a list of dicts
         value_type = self.structure[key]
-        if isinstance(value_type, list):
+
+        if op is '$set':
+            if isinstance(value_type, list) and not isinstance(val, list):
             #todo: we expect a list of object types
-            if not isinstance(val,list):
-                raise ValueError('wrong type for %s wanted %s got %s' % (key, value_type, type(value)))
+                raise ValueError('wrong type for %s wanted %s got %s' % (key, value_type, type(val)))
                 
+        # if we were passed a list, iterate it
+        if isinstance(val,list):
             newval = []
             for passed_thing in val:
                 if isinstance(passed_thing, Document):
