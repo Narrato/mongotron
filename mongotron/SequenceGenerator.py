@@ -14,7 +14,7 @@ class SequenceGenerator(object):
         collection.ensure_index("name")
 
         new_id = collection.find_and_modify(query={"name":name},
-                                            update={"$inc":{"seq":1}},
+                                            update={"$inc":{"seq":long(1)}},
                                             new=True,
                                             upsert=True).get("seq")
 
