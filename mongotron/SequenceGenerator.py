@@ -18,4 +18,4 @@ class SequenceGenerator(object):
                                             new=True,
                                             upsert=True).get("seq")
 
-        return new_id
+        return long(new_id)
