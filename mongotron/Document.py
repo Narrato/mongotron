@@ -259,6 +259,12 @@ class Document(object):
     @property
     def _id(self):
         return self.__attributes['_id'] if '_id' in self.__attributes else None
+        
+    def get_attributes(self):
+        return self.__attributes
+        
+    def set_attributes(self, attrs):
+        self.__attributes = attrs
 
     def __getattr__(self, key):
         
