@@ -613,12 +613,20 @@ class Document(object):
 
         return cls.find_one({'_id':id})
 
-    # this is so an API can export the document as a JSON dict
-    # override this in your class call the super class
-    # ret = super(Class, self).to_json_dict(full_export)
-    # ret['yourthing']=self.thing
-    # lets you hide specific variables that dont need to be exported
     def to_json_dict(self, full_export = False):
+        '''
+        this is so an API can export the document as a JSON dict
+        override this in your class call the super class
+        ret = super(Class, self).to_json_dict(full_export)
+        ret['yourthing']=self.thing
+        lets you hide specific variables that dont need to be exported
+        '''
+        return OrderedDict()
+        
+
+        #nothing to do
+    def from_json_dict(self, json_dict):
+        print "Document from_json_dict"
         return OrderedDict()
 
     #change tracking stuff calls this
@@ -635,6 +643,7 @@ class Document(object):
                 item = item.document_as_dict()
             newlist.append(item)
         return newlist
+
 
     def document_as_dict(self):
         retdict = {}

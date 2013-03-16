@@ -38,7 +38,7 @@ import codecs
 
 setup(
 	name = 'mongotron',
-	version = '0.2.4', # TODO don't forget to change version
+	version = '0.2.5', # TODO don't forget to change version
 
 	description = 'Python mongodb ODM',
 	long_description = codecs.open('README', "r", "utf-8").read(),
