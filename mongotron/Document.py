@@ -121,7 +121,7 @@ class Document(object):
             cls.fieldname_to_dbname[fieldname] = v
 
     @classproperty
-    def collection(cls):
+    def _dbcollection(cls):
         connectionname = getattr(cls, '__connection__', None)
 
         db = getattr(cls, '__db__', None)
@@ -413,6 +413,14 @@ class Document(object):
         # set it in the attributes dict too
         self.__attributes[key] = value
 
+    def unset(self, key):
+        # this allows you to SPECIFICALLY bypass the property checking and 
+        # set a field directly, even if its not defined
+        self.add_operation('$unset', key, 1)
+        # set it in the attributes dict too
+        del self.__attributes[key]
+
+
     def inc(self, key, value=1):
         if not self.key_in_structure(key):
             raise ValueError('this is not a settable key')
@@ -480,7 +488,7 @@ class Document(object):
             raise ValueError('one or more required fields are missing: %s', set(self.required)-set(self.__attributes.keys()))
 
 
-        col = self.collection
+        col = self._dbcollection
         ops = self.operations
 
         if new:
@@ -510,7 +518,7 @@ class Document(object):
     def delete(self):
         if not self.has_id:
             raise ValueError("document has no _id")
-        self.collection.remove({'_id':self['_id']})
+        self._dbcollection.remove({'_id':self['_id']})
 
 
 
@@ -559,7 +567,7 @@ class Document(object):
         if len(args):
             args[0] = cls.map_search_dict(args[0])
 
-        cursor = cls.collection.find(*args,**kwargs)
+        cursor = cls._dbcollection.find(*args,**kwargs)
         
         if cls.__should_explain:
             print cursor.explain()
@@ -576,7 +584,7 @@ class Document(object):
         if len(args):
             args[0] = cls.map_search_dict(args[0])
 
-        collection = cls.collection
+        collection = cls._dbcollection
         #thing = collection.find_one(*args,**kwargs)
 
         if spec_or_id is not None and not isinstance(spec_or_id, dict):
