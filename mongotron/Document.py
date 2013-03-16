@@ -626,7 +626,6 @@ class Document(object):
 
         #nothing to do
     def from_json_dict(self, json_dict):
-        print "Document from_json_dict"
         return OrderedDict()
 
     #change tracking stuff calls this
