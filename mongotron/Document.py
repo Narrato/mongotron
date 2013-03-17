@@ -71,10 +71,10 @@ class Document(object):
     __should_explain = False
 
     __internalfields = ['_Document__attributes', '_Document__ops', '_Document__operations']
-    
+
     structure = {
         '_id':ObjectId
-        
+
     }
     required = []
     default_values = {}
@@ -82,7 +82,7 @@ class Document(object):
     # 'longname':'shortname'
     # we will generate and inverse
     field_map = {}
-    
+
     # we will auto-generate the inverse e.g.
     # {'shortname':'longname'}
     # for speed
@@ -114,7 +114,7 @@ class Document(object):
         # we should probably clean it up so there is only one copy eh?
         cls.db_name_to_field = {}
         cls.fieldname_to_dbname = {}
-        
+
         for fieldname, v in cls.field_map.items():
             # we map the "object properties" to db_keys *which can be different*
             cls.db_name_to_field[v] = fieldname
@@ -161,17 +161,17 @@ class Document(object):
             k = self.short_to_long(k)
 
             value_type = self.structure.get(k, None)
-            
+
             if value_type:
                 if isinstance(value_type, list):
                     #todo: we expect a list of object types
                     if not isinstance(v, list):
                         raise ValueError('wrong type for %s wanted %s got %s' % (k, value_type, type(v)))
-                    
+
                     thingwewant = value_type[0]
                     newv = []
                     for passed_thing in v:
-                        
+
                         #TODO: replace this with something NICER PLEASE!!!
                         # INSTANTIATING THE TYPE IS HORRIBLE AND I AM SURE IT WILL BREAK
                         if issubclass(thingwewant, Document):
@@ -190,12 +190,12 @@ class Document(object):
                     self.__attributes[k] = v
             else:
                 self.__attributes[k] = v
-                
+
             #if a doc was passed in and it contains the default field, then lets not set it
             default_keys.discard(k)
         return default_keys
-    
-    
+
+
     def load_defaults_for_keys(self, default_keys):
         # any defaults that are left after loading the doc will be
         # set up now, if its callable it will be called
@@ -211,7 +211,7 @@ class Document(object):
 
             # we call set here so that its saved back to the db
             self.set(dk,new_value)
-            
+
     def load_dict(self, dicttoload):
         default_keys = set(self.default_values.keys())
         if dicttoload:
@@ -223,7 +223,7 @@ class Document(object):
     an internal dictionary, and tracks changes """
     def __init__(self, doc=None):
         self.__attributes = {}
-        
+
         for k in self.field_map:
             v = self.field_map[k]
             self.inverse_field_map[v] = k
@@ -259,15 +259,15 @@ class Document(object):
     @property
     def _id(self):
         return self.__attributes['_id'] if '_id' in self.__attributes else None
-        
+
     def get_attributes(self):
         return self.__attributes
-        
+
     def set_attributes(self, attrs):
         self.__attributes = attrs
 
     def __getattr__(self, key):
-        
+
         # get this from self.__attributes
         if self.key_in_structure(key):
             #TODO: wrap lists & dictionaries in a mutation tracking version
@@ -276,7 +276,7 @@ class Document(object):
 
             if attr is None:
                 value_type = self.structure.get(key, None)
-                
+
                 #TODO: make this awesome please
                 if isinstance( value_type, set ):
                     attr = set()
@@ -286,7 +286,7 @@ class Document(object):
                     attr = ChangeTrackingDict({}, self, key)
             else:
                 value_type = self.structure.get(key, None)
-                
+
                 #if the structure was a set() then make damned sure we return a set!
                 if isinstance( attr, list ) and isinstance( value_type, set ):
                     attr = set(attr)
@@ -294,7 +294,7 @@ class Document(object):
                     attr = ChangeTrackingList(attr, self, key)
                 elif isinstance(attr, dict) and not isinstance(attr, ChangeTrackingDict):
                     attr = ChangeTrackingDict(attr, self, key)
-            
+
             return attr
         else:
             # Default behaviour
@@ -309,7 +309,7 @@ class Document(object):
                     #todo: we expect a list of object types
                     if not isinstance(value,list):
                         raise ValueError('wrong type for %s wanted %s got %s' % (key, value_type, type(value)))
-                        
+
                     for passed_thing in value:
                         if not isinstance(passed_thing, value_type[0]):
                             raise ValueError('wrong type for %s wanted %s got %s' % (key, value_type, type(value)))
@@ -334,7 +334,7 @@ class Document(object):
         # also what about converting the other way?
         if isinstance(val, Document):
             val = val.document_as_dict()
-            
+
         #TODO: get the value_type, if its an instance of a list
         # then if the contents is a subclass of Document
         # then transport that to a list of dicts
@@ -344,7 +344,7 @@ class Document(object):
             if isinstance(value_type, list) and not isinstance(val, list):
             #todo: we expect a list of object types
                 raise ValueError('wrong type for %s wanted %s got %s' % (key, value_type, type(val)))
-                
+
         # if we were passed a list, iterate it
         if isinstance(val,list):
             newval = []
@@ -363,7 +363,7 @@ class Document(object):
 
         if not op in self.__ops:
             self.__ops[op] = {}
-        
+
         op_dict = self.__ops[op]
         if(op == '$set'):
             # transforming types (this could be better)
@@ -377,7 +377,7 @@ class Document(object):
                 op_dict[key] = { '$each':[] }
             param_dict = op_dict[key]
             param_list = param_dict['$each']
-            
+
             if isinstance(val, list):
                 param_list.extend(val)
             else:
@@ -387,7 +387,7 @@ class Document(object):
                 op_dict[key] = []
 
             param_list = op_dict[key]
-            
+
             if isinstance(val, list):
                 param_list.extend(val)
             else:
@@ -400,21 +400,21 @@ class Document(object):
     def clear_ops(self):
         self.__ops = {}
         pass
-    
-    
+
+
 
 
     # MONGO MAGIC HAPPENS HERE!
 
     def set(self, key, value):
-        # this allows you to SPECIFICALLY bypass the property checking and 
+        # this allows you to SPECIFICALLY bypass the property checking and
         # set a field directly, even if its not defined
         self.add_operation('$set', key, value)
         # set it in the attributes dict too
         self.__attributes[key] = value
 
     def unset(self, key):
-        # this allows you to SPECIFICALLY bypass the property checking and 
+        # this allows you to SPECIFICALLY bypass the property checking and
         # set a field directly, even if its not defined
         self.add_operation('$unset', key, 1)
         # set it in the attributes dict too
@@ -426,15 +426,15 @@ class Document(object):
             raise ValueError('this is not a settable key')
 
         self.add_operation('$inc', key, value)
-        
+
 
     def dec(self, key, value=1):
         if not self.key_in_structure(key):
             raise ValueError('this is not a settable key')
 
         self.add_operation('$inc', key, -abs(value))
-        
-    
+
+
     #addToSet gets special handling because we use the $each version
     def addToSet(self, key, value):
         #this is a bit more complicated
@@ -471,7 +471,7 @@ class Document(object):
             self.pre_save()
 
         new = not self.has_id
-        
+
         # NOTE: this is called BEFORE we get self.operations
         # to allow the pre_ functions to add to the set of operations
         # for this object! (i.e. set last modified fields etc)
@@ -540,7 +540,7 @@ class Document(object):
             newlist.append(v)
 
         return newlist
-        
+
     @classmethod
     def map_search_dict(cls, search_dict):
         newdict = {}
@@ -557,22 +557,24 @@ class Document(object):
 
         return newdict
 
+
     # searching and what not
     @classmethod
     def find(cls, *args, **kwargs):
         if 'spec' in kwargs:
             kwargs['spec'] = cls.map_search_dict(kwargs['spec'])
-            
+
         args = list(args)
         if len(args):
             args[0] = cls.map_search_dict(args[0])
 
-        cursor = cls._dbcollection.find(*args,**kwargs)
-        
+        cursor = cls._dbcollection.find(*args, **kwargs)
+
         if cls.__should_explain:
             print cursor.explain()
 
         return Cursor(cls, cursor)
+
 
     # you can pass an ObjectId in and it'll auto-search on the _id field!
     @classmethod
@@ -597,6 +599,7 @@ class Document(object):
         #    return None
         #return cls(doc=thing)
 
+
     # get a document by a specific id
     # this is mapped to the _id field
     # you can pass a string or an ObjectId
@@ -613,6 +616,7 @@ class Document(object):
 
         return cls.find_one({'_id':id})
 
+
     def to_json_dict(self, **kwargs):
         '''
         this is so an API can export the document as a JSON dict
@@ -622,17 +626,18 @@ class Document(object):
         lets you hide specific variables that dont need to be exported
         '''
         return OrderedDict()
-        
+
 
         #nothing to do
     def from_json_dict(self, json_dict):
         return OrderedDict()
 
+
     #change tracking stuff calls this
     #TODO: needs to be more advanced
     def _mark_as_changed(self, key, val):
         self.set(key, val)
-    
+
     # this is for embedding a document in another document, it convert
     # the document into a dict so it can be embedded
     def export_list_to_dict(self, thelist):
@@ -656,7 +661,7 @@ class Document(object):
             #TODO: anything else we should care about?
 
             retdict[self.long_to_short(key)] = val
-            
+
         return retdict
 
     pass
