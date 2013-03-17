@@ -613,7 +613,7 @@ class Document(object):
 
         return cls.find_one({'_id':id})
 
-    def to_json_dict(self, full_export = False):
+    def to_json_dict(self, **kwargs):
         '''
         this is so an API can export the document as a JSON dict
         override this in your class call the super class
