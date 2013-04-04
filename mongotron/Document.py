@@ -598,6 +598,11 @@ class Document(object):
         #if not thing:
         #    return None
         #return cls(doc=thing)
+    #TODO: implement update
+    @classmethod
+    def update(cls, spec, document, **kwargs):
+        return cls._dbcollection.update(spec, document, **kwargs)
+
 
 
     # get a document by a specific id
