@@ -569,6 +569,18 @@ class Document(object):
             args[0] = cls.map_search_dict(args[0])
 
         #cursor = cls._dbcollection.find(document_class=cls, *args, **kwargs)
+        
+        if not 'slave_okay' in kwargs and hasattr(cls._dbcollection, 'slave_okay'):
+            kwargs['slave_okay'] = cls._dbcollection.slave_okay
+        if not 'read_preference' in kwargs and hasattr(cls._dbcollection, 'read_preference'):
+            kwargs['read_preference'] = cls._dbcollection.read_preference
+        if not 'tag_sets' in kwargs and hasattr(cls._dbcollection, 'tag_sets'):
+            kwargs['tag_sets'] = cls._dbcollection.tag_sets
+        if not 'secondary_acceptable_latency_ms' in kwargs and\
+                hasattr(cls._dbcollection, 'secondary_acceptable_latency_ms'):
+            kwargs['secondary_acceptable_latency_ms'] = (
+                cls._dbcollection.secondary_acceptable_latency_ms
+            )
 
         cursor = Cursor(cls._dbcollection, document_class=cls, *args, **kwargs)
         return cursor
@@ -592,10 +604,7 @@ class Document(object):
 
         for result in cls.find(spec_or_id, *args, **kwargs).limit(-1):
             return result
-
-        #if not thing:
-        #    return None
-        #return cls(doc=thing)
+        return None
 
     #TODO: implement update
     @classmethod
