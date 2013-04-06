@@ -568,12 +568,10 @@ class Document(object):
         if len(args):
             args[0] = cls.map_search_dict(args[0])
 
-        cursor = cls._dbcollection.find(*args, **kwargs)
+        #cursor = cls._dbcollection.find(document_class=cls, *args, **kwargs)
 
-        if cls.__should_explain:
-            print cursor.explain()
-
-        return Cursor(cls, cursor)
+        cursor = Cursor(cls._dbcollection, document_class=cls, *args, **kwargs)
+        return cursor
 
 
     # you can pass an ObjectId in and it'll auto-search on the _id field!
@@ -598,6 +596,7 @@ class Document(object):
         #if not thing:
         #    return None
         #return cls(doc=thing)
+
     #TODO: implement update
     @classmethod
     def update(cls, spec, document, **kwargs):
