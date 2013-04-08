@@ -388,6 +388,7 @@ class Document(object):
     @property
     def operations(self):
 
+        # construct the $set changes
         fields = {}
         for key in self.__dirty_fields:
 
@@ -415,6 +416,7 @@ class Document(object):
 
         fields_to_set = {'$set':fields}
 
+        #merge the operations and the set of changes
         return dict(self.__ops.items() + fields_to_set.items())
 
 
@@ -434,8 +436,6 @@ class Document(object):
         pass
 
     def set(self, key, value):
-
-        print "SET IS CALLED!!!!!!"
 
         if value is None:
             self.unset(key)
@@ -527,8 +527,6 @@ class Document(object):
 
         col = self._dbcollection
         ops = self.operations
-
-        print ops
 
         if new:
             #if this is an insert, generate an ObjectId!
