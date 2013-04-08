@@ -70,7 +70,7 @@ class Document(object):
 
     __should_explain = False
 
-    __internalfields = ['_Document__attributes', '_Document__ops', '_Document__operations']
+    __internalfields = ['_Document__attributes', '_Document__ops', '_Document__operations', '_Document__dirty_fields']
 
     structure = {
         '_id':ObjectId
@@ -88,6 +88,7 @@ class Document(object):
     # for speed
     inverse_field_map = {}
 
+    __dirty_fields = set()
 
     def pre_save(self):
         pass
@@ -340,12 +341,7 @@ class Document(object):
         # then transport that to a list of dicts
         value_type = self.structure[key]
 
-        if op is '$set':
-            if isinstance(value_type, list) and not isinstance(val, list):
-            #todo: we expect a list of object types
-                raise ValueError('wrong type for %s wanted %s got %s' % (key, value_type, type(val)))
-
-        # if we were passed a list, iterate it
+       # if we were passed a list, iterate it
         if isinstance(val,list):
             newval = []
             for passed_thing in val:
@@ -366,11 +362,7 @@ class Document(object):
 
         op_dict = self.__ops[op]
         if(op == '$set'):
-            # transforming types (this could be better)
-            if isinstance(val, set):
-                val = list(val)
-
-            op_dict[key] = val
+            raise ValueError('$set is an invalid operation!')
         elif(op == '$addToSet'):
             # $addToSet gets special handling because we use the $each version
             if not key in op_dict:
@@ -395,10 +387,40 @@ class Document(object):
 
     @property
     def operations(self):
-        return self.__ops
+
+        fields = {}
+        for key in self.__dirty_fields:
+
+            latest_val = self.__attributes[key]
+
+            #convert a Document to a dict
+            if isinstance(latest_val, Document):
+                latest_val = latest_val.document_as_dict()
+
+            #convert a set to a list (mongo doesn't do sets)
+            if isinstance(latest_val, set):
+                latest_val = list(latest_val)
+
+            # if its a list, convert any embedded docs to dicts!
+            if isinstance(latest_val,list):
+                newval = []
+                for passed_thing in latest_val:
+                    if isinstance(passed_thing, Document):
+                        newval.append(passed_thing.document_as_dict())
+                    else:
+                        newval.append(passed_thing)
+                latest_val = newval
+
+            fields[self.long_to_short(key)] = latest_val
+
+        fields_to_set = {'$set':fields}
+
+        return dict(self.__ops.items() + fields_to_set.items())
+
 
     def clear_ops(self):
         self.__ops = {}
+        self.__dirty_fields = set()
         pass
 
 
@@ -406,10 +428,24 @@ class Document(object):
 
     # MONGO MAGIC HAPPENS HERE!
 
+    def mark_dirty(self, key):
+        #TODO: add this key to the $set listd
+        self.__dirty_fields.add(key)
+        pass
+
     def set(self, key, value):
+
+        print "SET IS CALLED!!!!!!"
+
+        if value is None:
+            self.unset(key)
+            return
+
         # this allows you to SPECIFICALLY bypass the property checking and
         # set a field directly, even if its not defined
-        self.add_operation('$set', key, value)
+        #self.add_operation('$set', key, value)
+        self.__dirty_fields.add(key)
+
         # set it in the attributes dict too
         self.__attributes[key] = value
 
@@ -443,6 +479,7 @@ class Document(object):
             raise ValueError('this is not a settable key')
 
         self.add_operation('$addToSet', key, value)
+
 
     # we translate push and pull into pushAll and pullAll
     # so that we can queue up the operations!
@@ -490,6 +527,8 @@ class Document(object):
 
         col = self._dbcollection
         ops = self.operations
+
+        print ops
 
         if new:
             #if this is an insert, generate an ObjectId!
@@ -617,17 +656,17 @@ class Document(object):
     # this is mapped to the _id field
     # you can pass a string or an ObjectId
     @classmethod
-    def get_by_id(cls, id):
+    def get_by_id(cls, oid):
         #convert id to ObjectId
-        if isinstance(id, basestring):
+        if isinstance(oid, basestring):
             try:
-                id = ObjectId(id)
+                oid = ObjectId(oid)
             except:
                 return None
-        elif not isinstance(id, ObjectId):
-            raise ValueError('id should be an ObjectId or string')
+        elif not isinstance(oid, ObjectId):
+            raise ValueError('oid should be an ObjectId or string')
 
-        return cls.find_one({'_id':id})
+        return cls.find_one({'_id':oid})
 
 
     def to_json_dict(self, **kwargs):
@@ -649,7 +688,7 @@ class Document(object):
     #change tracking stuff calls this
     #TODO: needs to be more advanced
     def _mark_as_changed(self, key, val):
-        self.set(key, val)
+        self.mark_dirty(key)
 
     # this is for embedding a document in another document, it convert
     # the document into a dict so it can be embedded
