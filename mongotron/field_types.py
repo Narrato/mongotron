@@ -211,10 +211,15 @@ class ObjectIdField(ScalarField):
 
 
 class IntField(ScalarField):
-    """A scalar field that must contain an int or long.
+    """A scalar field that must contain an int or long. The value is always
+    coerced to a MongoDB NumberLong, and returned as a long.
     """
     DEFAULT_DEFAULT = 0
     TYPES = (int, long)
+
+    #: See Field.collapse(). Unconditionally force all values to be
+    #: longs.
+    collapse = staticmethod(long)
 
 
 class FloatField(ScalarField):
