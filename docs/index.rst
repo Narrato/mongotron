@@ -117,6 +117,14 @@ contents of any base classes.
 
 
 
+Handling of ``None``
+####################
+
+Mongotron hates ``None`` and you probably should too. Setting a field to
+``None`` is equivalent to deleting it. To really actually store ``null`` in the
+database, use :py:meth:`Document.set` to unconditionally set a value.
+
+
 Document class
 ##############
 
