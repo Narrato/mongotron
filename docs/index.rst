@@ -26,6 +26,11 @@ Indices and tables
     :members:
 
 
+
+
+Document class
+##############
+
 .. autoclass:: mongotron.Document
-   :members:
+    :members:
 

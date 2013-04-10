@@ -6,19 +6,26 @@ from ChangeTrackingList import ChangeTrackingList
 from ChangeTrackingDict import ChangeTrackingDict
 
 from collections import OrderedDict
-import inspect
+
 
 class classproperty(object):
+    """Equivalent to property() on a class, i.e. invoking the descriptor
+    results in the wrapped function being invoked and its return value being
+    used as the descriptor's value.
+    """
     def __init__(self, f):
         self.f = f
+
     def __get__(self, obj, owner):
         return self.f(owner)
+
 
 class DocumentMeta(type):
     def __new__(cls, name, bases, attrs):
         for base in bases:
             parent = base.__mro__[0]
             #determine if the parent has a structure dict
+            structure = getattr(parent, 'structure', {})
             if hasattr(parent, 'structure'):
                 if isinstance(parent.structure, dict):
                     #if parent.structure:
@@ -29,11 +36,10 @@ class DocumentMeta(type):
                         attrs['structure'] = parent.structure.copy()
                         attrs['structure'].update(obj_structure)
 
-            if hasattr(parent, 'default_values'):
-                if parent.default_values:
-                    obj_default_values = attrs.get('default_values', {}).copy()
-                    attrs['default_values'] = parent.default_values.copy()
-                    attrs['default_values'].update(obj_default_values)
+            if getattr(parent, 'default_values', None):
+                obj_default_values = attrs.get('default_values', {}).copy()
+                attrs['default_values'] = parent.default_values.copy()
+                attrs['default_values'].update(obj_default_values)
 
             if hasattr(parent, 'field_map'):
                 if 'field_map' not in attrs and parent.field_map:
@@ -60,53 +66,68 @@ class DocumentMeta(type):
             return ncls
 
         ncls.initialize()
-
         return ncls
 
-    pass
 
 class Document(object):
+    """A class with property-style access. It maps attribute access to an
+    internal dictionary, and tracks changes.
+    """
+
     __metaclass__ = DocumentMeta
-
     __should_explain = False
+    __internalfields = ['_Document__attributes',
+                        '_Document__ops',
+                        '_Document__operations',
+                        '_Document__dirty_fields']
 
-    __internalfields = ['_Document__attributes', '_Document__ops', '_Document__operations', '_Document__dirty_fields']
-
+    #: Map of canonical field names to objects representing the required type
+    #: for that field.
     structure = {
-        '_id':ObjectId
-
+        '_id': ObjectId
     }
+
+    #: List of canonical field names that absolutely must be set prior to save.
+    #: Automatically populated by metaclass.
     required = []
+
+    #: Map of canonical field names to their default values.
     default_values = {}
-    # fieldmap should be in the form of
-    # 'longname':'shortname'
-    # we will generate and inverse
+
+    #: Map of canonical field names to shortened field names. Automatically
+    #: populated by metaclass.
     field_map = {}
 
-    # we will auto-generate the inverse e.g.
-    # {'shortname':'longname'}
-    # for speed
+    #: Map of shortened field names to canonical field names. Automatically
+    #: populated by metaclass.
     inverse_field_map = {}
 
-    __dirty_fields = set()
-
     def pre_save(self):
-        pass
+        """Hook invoked prior to creating or updating a document.
+        :py:meth:`pre_save` is always invoked before :py:meth:`pre_insert` or
+        :py:meth:`pre_update`. Override in your subclass as desired."""
 
     def post_save(self):
-        pass
+        """Hook invoked after a document has been created or updated
+        successfully. :py:meth:`pre_save` is always invoked before
+        :py:meth:`pre_insert` or :py:meth:`pre_update`. Override in your
+        subclass as desired."""
 
     def pre_insert(self):
-        pass
+        """Hook invoked prior to document creation, but after
+        :py:meth:`pre_save`. Override in your subclass as desired."""
 
     def post_insert(self):
-        pass
+        """Hook invoked after document creation, but after
+        :py:meth:`post_save`. Override in your subclass as desired."""
 
     def pre_update(self):
-        pass
+        """Hook invoked prior to document update, but after
+        :py:meth:`pre_save`. Override in your subclass as desired."""
 
     def post_update(self):
-        pass
+        """Hook invoked after document update, but after :py:meth:`post_save`.
+        Override in your subclass as desired."""
 
     @classmethod
     def initialize(cls):
@@ -140,22 +161,27 @@ class Document(object):
 
 
     def key_in_structure(self, key):
-        #implement this properly pls!
-        return key in self.structure.keys()
+        type_ = self.structure.get(key, None)
+        if type_:
+            return True
+        raise AttributeError('%r has no field %r' % (self.__class__, key))
 
     def long_to_short(self, long_key):
-        short_key = self.field_map.get(long_key, None)
-        if not short_key:
-            short_key = long_key
-        return short_key
+        """Return the shortened field name for `long_key`, returning `long_key`
+        if no short version exists."""
+        return self.field_map.get(long_key, long_key)
 
     def short_to_long(self, short_key):
-        long_key = self.inverse_field_map.get(short_key, None)
-        if not long_key:
-            long_key = short_key
-        return long_key
+        """Return the canonical field name for `short_key`, returning
+        `short_key` if no canonical version exists."""
+        return self.inverse_field_map.get(short_key, short_key)
 
-    def load_attr_dict(self, doc, default_keys):
+    def load_attr_dict(self, doc, default_keys=None):
+        """Reset the document to an empty state, then load keys and values from
+        the dictionary `doc`.
+        """
+        if default_keys is None:
+            default_keys = set()
         self.__attributes = {}
 
         for k, v in doc.iteritems():
@@ -194,7 +220,6 @@ class Document(object):
 
             #if a doc was passed in and it contains the default field, then lets not set it
             default_keys.discard(k)
-        return default_keys
 
 
     def load_defaults_for_keys(self, default_keys):
@@ -215,13 +240,10 @@ class Document(object):
 
     def load_dict(self, dicttoload):
         default_keys = set(self.default_values.keys())
-        if dicttoload:
-            default_keys = self.load_attr_dict(dicttoload, default_keys)
+        self.load_attr_dict(dicttoload or {}, default_keys)
         self.load_defaults_for_keys(default_keys)
 
 
-    """A class with property-style access. It maps attribute access to
-    an internal dictionary, and tracks changes """
     def __init__(self, doc=None):
         self.__attributes = {}
 
@@ -328,7 +350,11 @@ class Document(object):
 
     # mongo operation wrappers!
     def add_operation(self, op, key, val):
-
+        """Arrange for the Mongo operation `op` to be applied to the document
+        property `key` with the operand `value` during save.
+        """
+        if key not in self.structure:
+            raise KeyError('%r is not a settable key' % (key,))
 
         # convert an assigned doc into a dict pls
         # we should also iterate over lists doing the same thing :/
@@ -421,19 +447,20 @@ class Document(object):
 
 
     def clear_ops(self):
+        """Reset the list of field changes tracked on this document. Note this
+        will not reset field values to their original.
+        """
         self.__ops = {}
         self.__dirty_fields = set()
-        pass
-
-
 
 
     # MONGO MAGIC HAPPENS HERE!
 
     def mark_dirty(self, key):
+        """Explicitly mark the field `key` as modified, so that it will be
+        mutated during :py:meth:`save`."""
         #TODO: add this key to the $set listd
         self.__dirty_fields.add(key)
-        pass
 
     def set(self, key, value):
 
@@ -458,16 +485,14 @@ class Document(object):
 
 
     def inc(self, key, value=1):
-        if not self.key_in_structure(key):
-            raise ValueError('this is not a settable key')
-
+        """Increment the value of `key` by `value`.
+        """
         self.add_operation('$inc', key, value)
 
 
     def dec(self, key, value=1):
-        if not self.key_in_structure(key):
-            raise ValueError('this is not a settable key')
-
+        """Decrement the value of `key` by `value`.
+        """
         self.add_operation('$inc', key, -abs(value))
 
 
@@ -475,9 +500,6 @@ class Document(object):
     def addToSet(self, key, value):
         #this is a bit more complicated
         #what we need to do is store an "each" part
-        if not self.key_in_structure(key):
-            raise ValueError('this is not a settable key')
-
         self.add_operation('$addToSet', key, value)
 
 
@@ -486,38 +508,26 @@ class Document(object):
     def pull(self, key, value):
         #this is a bit more complicated
         #what we need to do is store an "each" part
-        if not self.key_in_structure(key):
-            raise ValueError('this is not a settable key')
-
         self.add_operation('$pullAll', key, value)
 
 
     def push(self, key, value):
-        if not self.key_in_structure(key):
-            raise ValueError('this is not a settable key')
-
+        """Append `value` to the list-valued `key`.
+        """
         self.add_operation('$pushAll', key, value)
 
 
-
-
-
     def save(self, safe=True):
-
-        if hasattr(self, 'pre_save'):
-            self.pre_save()
-
+        self.pre_save()
         new = not self.has_id
 
         # NOTE: this is called BEFORE we get self.operations
         # to allow the pre_ functions to add to the set of operations
         # for this object! (i.e. set last modified fields etc)
         if new:
-            if hasattr(self, 'pre_insert'):
-                self.pre_insert()
+            self.pre_insert()
         else:
-            if hasattr(self, 'pre_update'):
-                self.pre_update()
+            self.pre_update()
 
         # We execute the REQUIRED stuff AFTER the pre_save/insert/update
         # as those functions may well fill in the missing required fields!
@@ -534,22 +544,16 @@ class Document(object):
                 res = col.find_and_modify(query={'_id':ObjectId()}, update=ops, upsert=True, new=True)
                 self.load_dict(res)
 
-            if hasattr(self, 'post_insert'):
-                self.post_insert()
+            self.post_insert()
         else:
             if ops:
                 res = col.find_and_modify(query={'_id':self.__attributes['_id']}, update=ops, upsert=True, new=True)
                 self.load_dict(res)
 
-            if hasattr(self, 'post_update'):
-                self.post_update()
+            self.post_update()
 
         self.clear_ops()
-
-        if hasattr(self, 'post_save'):
-            self.post_save()
-
-        pass
+        self.post_save()
 
     # delete this document from the collection
     def delete(self):
@@ -598,6 +602,8 @@ class Document(object):
     # searching and what not
     @classmethod
     def find(cls, *args, **kwargs):
+        """Class method that finds stuff somehow.
+        """
         if 'spec' in kwargs:
             kwargs['spec'] = cls.map_search_dict(kwargs['spec'])
 
@@ -605,27 +611,26 @@ class Document(object):
         if len(args):
             args[0] = cls.map_search_dict(args[0])
 
-        #cursor = cls._dbcollection.find(document_class=cls, *args, **kwargs)
-        
-        if not 'slave_okay' in kwargs and hasattr(cls._dbcollection, 'slave_okay'):
+        if 'slave_okay' not in kwargs and hasattr(cls._dbcollection, 'slave_okay'):
             kwargs['slave_okay'] = cls._dbcollection.slave_okay
-        if not 'read_preference' in kwargs and hasattr(cls._dbcollection, 'read_preference'):
+        if 'read_preference' not in kwargs and hasattr(cls._dbcollection, 'read_preference'):
             kwargs['read_preference'] = cls._dbcollection.read_preference
-        if not 'tag_sets' in kwargs and hasattr(cls._dbcollection, 'tag_sets'):
+        if 'tag_sets' not in kwargs and hasattr(cls._dbcollection, 'tag_sets'):
             kwargs['tag_sets'] = cls._dbcollection.tag_sets
-        if not 'secondary_acceptable_latency_ms' in kwargs and\
+        if 'secondary_acceptable_latency_ms' not in kwargs and \
                 hasattr(cls._dbcollection, 'secondary_acceptable_latency_ms'):
             kwargs['secondary_acceptable_latency_ms'] = (
                 cls._dbcollection.secondary_acceptable_latency_ms
             )
 
-        cursor = Cursor(cls._dbcollection, document_class=cls, *args, **kwargs)
-        return cursor
+        return Cursor(cls._dbcollection, document_class=cls, *args, **kwargs)
 
 
     # you can pass an ObjectId in and it'll auto-search on the _id field!
     @classmethod
     def find_one(cls, spec_or_id=None, *args, **kwargs):
+        """Find a document with the given ObjectID `spec_or_id`.
+        """
         if 'spec' in kwargs:
             kwargs['spec'] = cls.map_search_dict(kwargs['spec'])
 
@@ -713,6 +718,3 @@ class Document(object):
             retdict[self.long_to_short(key)] = val
 
         return retdict
-
-    pass
-
