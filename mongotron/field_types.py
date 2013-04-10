@@ -5,6 +5,7 @@ Implementations of field type parsing, validation, and encoding.
 from __future__ import absolute_import
 
 import copy
+import datetime
 import bson
 import bson.objectid
 
@@ -49,7 +50,8 @@ class Field(object):
             self.make = default
         else:
             self.default = default
-        self.validate(self.make())
+        # TODO: commented out until None vs. DEFAULT mess fixed.
+        #self.validate(self.make())
 
     def __get__(self, obj, klass):
         """Implement the descriptor protocol by fetching the collapsed
@@ -132,7 +134,7 @@ class ListField(Field):
         if obj is None:
             return self
         value = Field.__get__(self, obj, klass)
-        return ChangeTrackingList(value or [], obj, self.name)
+        return ChangeTrackingList(value or self.make(), obj, self.name)
 
     def validate(self, value):
         """See Field.validate()."""
@@ -165,8 +167,8 @@ class ListField(Field):
                 # Container with specific value type.
                 element_type = parse(obj[0])
             return cls(element_type, **kwargs)
-        elif obj == cls.EMPTY_VALUE:
-            # structure = {'foo': []}
+        elif obj == cls.EMPTY_VALUE or obj is cls.CONTAINER_TYPE:
+            # structure = {'foo': []} or {'foo': list}
             element_type = Field()
             return cls(element_type, **kwargs)
 
@@ -228,6 +230,66 @@ class FixedListField(Field):
             return cls(element_types=map(parse, obj), **kwargs)
 
 
+class DictField(Field):
+    """Dict validator. Ensure value type is a dict, and that each element
+    validates using the given element key and value type.
+    """
+    DEFAULT_DEFAULT = {}
+
+    def __init__(self, key_type, value_type, **kwargs):
+        """See Field.__init__()."""
+        self.key_type = parse(key_type)
+        self.value_type = parse(value_type)
+        Field.__init__(self, **kwargs)
+
+    def __get__(self, obj, klass):
+        """See Field.__get__. Returns a :py:class:`ChangeTrackingList` that
+        generates semantic actions based on user modifications."""
+        if obj is None:
+            return self
+        value = Field.__get__(self, obj, klass)
+        return ChangeTrackingDict(value or self.make(), obj, self.name)
+
+    def validate(self, dct):
+        """See Field.validate()."""
+        if not isinstance(value, dict):
+            raise ValueError('value must be a %r.' % (dict,))
+        for key, value in dct.iteritems():
+            self.key_type.validate(key)
+            self.value_type.validate(value)
+
+    def collapse(self, dct):
+        """See Field.collapse(). Collapse each element in turn."""
+        if self.key_type.collapse == Field.collapse \
+                and self.value_type.collapse == Field.collapse:
+            # Short circuit rebulding entire new dict when not required.
+            return value
+        return dict((self.key_type.collapse(k), self.value_type.collapse(v))
+                    for k, v in dct.iteritems())
+
+    def expand(self, value):
+        """See Field.expand(). Expand each element in turn."""
+        if self.key_type.collapse == Field.collapse \
+                and self.value_type.collapse == Field.collapse:
+            # Short circuit rebulding entire new dict when not required.
+            return value
+        return dict((self.key_type.expand(k), self.value_type.expand(v))
+                    for k, v in dct.iteritems())
+
+    @classmethod
+    def parse(cls, obj, **kwargs):
+        """See Field.parse()."""
+        if type(obj) is dict:
+            if len(obj) == 0:
+                return cls(Field(), Field(), **kwargs)
+            elif len(obj) == 1:
+                key, value = next(obj.iteritems())
+                return cls(parse(key), parse(value), **kwargs)
+        elif obj == {} or obj is dict:
+            # structure = {'foo': {}} or {'foo': dict}
+            return cls(Field(), Field(), **kwargs)
+
+
 class ScalarField(Field):
     """A scalar field that must contain a specific set of types.
     """
@@ -267,9 +329,17 @@ class BlobField(ScalarField):
 
 
 class UnicodeField(ScalarField):
-    """A unicode value."""
+    """A unicode value.
+    """
     TYPES = (unicode,)
     DEFAULT_DEFAULT = u''
+
+
+class DatetimeField(ScalarField):
+    """A field containing a Python datetime.datetime value.
+    """
+    DEFAULT_DEFAULT = None
+    TYPES = (datetime.datetime,)
 
 
 class ObjectIdField(ScalarField):
@@ -301,7 +371,7 @@ class FloatField(ScalarField):
 class DocumentField(Field):
     """A field containing a sub-document.
     """
-    def __init__(self, doc_type, **kwargs):
+    def __init__(self, doc_type, default=UNDEFINED, **kwargs):
         """See Field.__init__()."""
         if default is UNDEFINED:
             default = doc_type()
@@ -333,9 +403,11 @@ TYPE_ORDER = [
     ListField,
     SetField,
     FixedListField,
+    DictField,
     BoolField,
     BlobField,
     UnicodeField,
+    DatetimeField,
     IntField,
     FloatField,
     ObjectIdField,

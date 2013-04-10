@@ -158,15 +158,17 @@ class Document(object):
             return True
         raise AttributeError('%r has no field %r' % (self.__class__, key))
 
-    def long_to_short(self, long_key):
+    @classmethod
+    def long_to_short(cls, long_key):
         """Return the shortened field name for `long_key`, returning `long_key`
         if no short version exists."""
-        return self.field_map.get(long_key, long_key)
+        return cls.field_map.get(long_key, long_key)
 
-    def short_to_long(self, short_key):
+    @classmethod
+    def short_to_long(cls, short_key):
         """Return the canonical field name for `short_key`, returning
         `short_key` if no canonical version exists."""
-        return self.inverse_field_map.get(short_key, short_key)
+        return cls.inverse_field_map.get(short_key, short_key)
 
     def load_dict(self, doc):
         """Reset the document to an empty state, then load keys and values from
