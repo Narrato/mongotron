@@ -7,6 +7,8 @@ from ChangeTrackingDict import ChangeTrackingDict
 
 from collections import OrderedDict
 
+from mongotron import field_types
+
 
 class classproperty(object):
     """Equivalent to property() on a class, i.e. invoking the descriptor
@@ -21,52 +23,45 @@ class classproperty(object):
 
 
 class DocumentMeta(type):
+    """This is the metaclass for :py:class:`Document`; it is responsible for
+    merging :py:attr:`Document.structure`, :py:attr:`Document.field_map` and
+    :py:attr:`Document.default_values` with any base classes.
+
+    After this is done, it synthesizes a new :py:attr:`Document.field_types`
+    mapping using :py:class:`mongotron.field_types.Field` Field instances.
+    """
     def __new__(cls, name, bases, attrs):
+        field_types = {}
+        required = set()
+
         for base in bases:
             parent = base.__mro__[0]
-            #determine if the parent has a structure dict
-            structure = getattr(parent, 'structure', {})
-            if hasattr(parent, 'structure'):
-                if isinstance(parent.structure, dict):
-                    #if parent.structure:
-                    if 'structure' not in attrs and parent.structure:
-                        attrs['structure'] = parent.structure
-                    else:
-                        obj_structure = attrs.get('structure', {}).copy()
-                        attrs['structure'] = parent.structure.copy()
-                        attrs['structure'].update(obj_structure)
+            for name in 'structure', 'default_values', 'field_map':
+                parent_dct = getattr(parent, name, {})
+                assert isinstance(parent_dct, dict)
+                attrs[name] = dict(parent_dct, **attrs.get(name, {}))
 
-            if getattr(parent, 'default_values', None):
-                obj_default_values = attrs.get('default_values', {}).copy()
-                attrs['default_values'] = parent.default_values.copy()
-                attrs['default_values'].update(obj_default_values)
+            required.update(getattr(parent, 'required', []))
 
-            if hasattr(parent, 'field_map'):
-                if 'field_map' not in attrs and parent.field_map:
-                    attrs['field_map'] = parent.field_map
-                else:
-                    obj_field_map = attrs.get('field_map', {}).copy()
-                    attrs['field_map'] = parent.field_map.copy()
-                    attrs['field_map'].update(obj_field_map)
-
-            if hasattr(parent, 'required'):
-                if attrs.get('required'):
-                    attrs['required'] = list(set(parent.required).union(set(attrs['required'])))
-
+        attrs['required'] = required
+        attrs['field_map'] = self.make_field_map(attrs)
         #print '----------------------------------------'
         #print attrs['structure']
         #print attrs['default_values']
         #print attrs['required']
         #print attrs['field_map']
         #print '----------------------------------------'
-        #return type.__new__(cls, name, bases, attrs)
+        return type.__new__(cls, name, bases, attrs)
 
-        ncls = type.__new__(cls, name, bases, attrs)
-        if name == 'Document':
-            return ncls
-
-        ncls.initialize()
-        return ncls
+    def make_field_map(self, attrs):
+        """Return a mapping of field names to :py:class:`Field` instances
+        describing that field.
+        """
+        attrs['field_map'] = field_map = {}
+        for name, desc in attrs['structure'].iteritems():
+            default = attrs['default_values'].get(name, field_types.MISSING)
+            required = attrs['required'].get(name, False)
+            field_map[name] = field_types.parse(desc, required, default)
 
 
 class Document(object):
@@ -76,10 +71,10 @@ class Document(object):
 
     __metaclass__ = DocumentMeta
     __should_explain = False
-    __internalfields = ['_Document__attributes',
-                        '_Document__ops',
-                        '_Document__operations',
-                        '_Document__dirty_fields']
+    __internalfields = frozenset(['_Document__attributes',
+                                  '_Document__ops',
+                                  '_Document__operations',
+                                  '_Document__dirty_fields'])
 
     #: Map of canonical field names to objects representing the required type
     #: for that field.
@@ -128,19 +123,6 @@ class Document(object):
     def post_update(self):
         """Hook invoked after document update, but after :py:meth:`post_save`.
         Override in your subclass as desired."""
-
-    @classmethod
-    def initialize(cls):
-        #TODO: the mappings are duplicated due to historical reasons
-        # (the find/find_one need to map too, but dont have access to an instance)
-        # we should probably clean it up so there is only one copy eh?
-        cls.db_name_to_field = {}
-        cls.fieldname_to_dbname = {}
-
-        for fieldname, v in cls.field_map.items():
-            # we map the "object properties" to db_keys *which can be different*
-            cls.db_name_to_field[v] = fieldname
-            cls.fieldname_to_dbname[fieldname] = v
 
     @classproperty
     def _dbcollection(cls):
@@ -290,63 +272,43 @@ class Document(object):
         self.__attributes = attrs
 
     def __getattr__(self, key):
-
-        # get this from self.__attributes
-        if self.key_in_structure(key):
-            #TODO: wrap lists & dictionaries in a mutation tracking version
-            # which can push changes back up into our change set pls!
-            attr = self.__attributes.get(key, None)
-
-            if attr is None:
-                value_type = self.structure.get(key, None)
-
-                #TODO: make this awesome please
-                if isinstance( value_type, set ):
-                    attr = set()
-                elif isinstance( value_type, list ):
-                    attr = ChangeTrackingList([], self, key)
-                elif isinstance( value_type, dict ):
-                    attr = ChangeTrackingDict({}, self, key)
-            else:
-                value_type = self.structure.get(key, None)
-
-                #if the structure was a set() then make damned sure we return a set!
-                if isinstance( attr, list ) and isinstance( value_type, set ):
-                    attr = set(attr)
-                if (isinstance(attr, (list, tuple)) and not isinstance(attr, ChangeTrackingList)):
-                    attr = ChangeTrackingList(attr, self, key)
-                elif isinstance(attr, dict) and not isinstance(attr, ChangeTrackingDict):
-                    attr = ChangeTrackingDict(attr, self, key)
-
-            return attr
-        else:
-            # Default behaviour
+        if key not in self.structure:
             return object.__getattribute__(self, key)
 
-    def __setattr__(self, key, value):
-        if self.key_in_structure(key):
-            #todo check value is the right type as defined in self.structure
-            value_type = self.structure[key]
-            if value_type:
-                if isinstance(value_type, list):
-                    #todo: we expect a list of object types
-                    if not isinstance(value,list):
-                        raise ValueError('wrong type for %s wanted %s got %s' % (key, value_type, type(value)))
+        #TODO: wrap lists & dictionaries in a mutation tracking version
+        # which can push changes back up into our change set pls!
+        value_type = self.structure[key]
 
-                    for passed_thing in value:
-                        if not isinstance(passed_thing, value_type[0]):
-                            raise ValueError('wrong type for %s wanted %s got %s' % (key, value_type, type(value)))
-
-                elif not isinstance(value, value_type):
-                    raise ValueError('wrong type for %s wanted %s got %s' % (key, value_type, type(value)))
-
-            self.set(key, value)
+        if key not in self.__attributes:
+            #TODO: make this awesome please
+            if isinstance(value_type, set):
+                return set()
+            if isinstance(value_type, list):
+                return ChangeTrackingList([], self, key)
+            if isinstance( value_type, dict ):
+                return ChangeTrackingDict({}, self, key)
         else:
-            if key in self.__internalfields:
-                return super(Document, self).__setattr__(key, value)
-            raise ValueError('%s this is not a settable key' % key)
+            value = self.__attributes[key]
+            # If the structure was a set() then make damned sure we return a
+            # set!
+            if isinstance(value, list) and isinstance(value_type, set):
+                return set(value)
+            if isinstance(value, (list, tuple)) \
+                    and not isinstance(value, ChangeTrackingList):
+                return ChangeTrackingList(value, self, key)
+            if isinstance(attr, dict) and not isinstance(attr, ChangeTrackingDict):
+                return ChangeTrackingDict(attr, self, key)
 
-    #TODO: turn __delattr__ into a $unset?
+    def __setattr__(self, key, value):
+        if key in self.__internal_fields:
+            return super(Document, self).__setattr(key, value)
+        self.typed_set(key, value)
+
+    def typed_set(self, key, value):
+        if key not in self.structure:
+            raise ValueError('%s this is not a settable key' % key)
+        self.field_types[key].validate(value)
+        self.set(key, value)
 
     # mongo operation wrappers!
     def add_operation(self, op, key, val):
@@ -356,15 +318,15 @@ class Document(object):
         if key not in self.structure:
             raise KeyError('%r is not a settable key' % (key,))
 
-        # convert an assigned doc into a dict pls
-        # we should also iterate over lists doing the same thing :/
-        # also what about converting the other way?
+        # convert an assigned doc into a dict pls. we should also iterate over
+        # lists doing the same thing :/ also what about converting the other
+        # way?
         if isinstance(val, Document):
             val = val.document_as_dict()
 
-        #TODO: get the value_type, if its an instance of a list
-        # then if the contents is a subclass of Document
-        # then transport that to a list of dicts
+        # TODO: get the value_type, if its an instance of a list. then if the
+        # contents is a subclass of Document then transport that to a list of
+        # dicts
         value_type = self.structure[key]
 
        # if we were passed a list, iterate it
@@ -377,19 +339,15 @@ class Document(object):
                     newval.append(passed_thing)
             val = newval
 
-        # we should probably make this smarter so you can't
-        # set a top level array and a component at the same time
-        # though if you're doing that, your code is broken anyway
-
+        # we should probably make this smarter so you can't set a top level
+        # array and a component at the same time though if you're doing that,
+        # your code is broken anyway
         key = self.long_to_short(key)
 
-        if not op in self.__ops:
-            self.__ops[op] = {}
-
-        op_dict = self.__ops[op]
-        if(op == '$set'):
+        op_dict = self.__ops.setdefault(op, {})
+        if op == '$set':
             raise ValueError('$set is an invalid operation!')
-        elif(op == '$addToSet'):
+        elif op == '$addToSet':
             # $addToSet gets special handling because we use the $each version
             if not key in op_dict:
                 op_dict[key] = { '$each':[] }
@@ -401,7 +359,7 @@ class Document(object):
             else:
                 param_list.append(val)
         else:
-            if not key in op_dict:
+            if key not in op_dict:
                 op_dict[key] = []
 
             param_list = op_dict[key]
@@ -463,38 +421,44 @@ class Document(object):
         self.__dirty_fields.add(key)
 
     def set(self, key, value):
+        """Unconditionally set the underlying document field `key` to `value`.
+        If `value` is ``None``, then behave as if :py:meth:`unset` was invoked.
 
+        Note this does no type checking or field name mapping; you may use it
+        to directly modify the underlying Mongo document.
+        """
         if value is None:
-            self.unset(key)
-            return
-
-        # this allows you to SPECIFICALLY bypass the property checking and
-        # set a field directly, even if its not defined
-        #self.add_operation('$set', key, value)
+            return self.unset(key)
         self.__dirty_fields.add(key)
-
-        # set it in the attributes dict too
         self.__attributes[key] = value
 
     def unset(self, key):
-        # this allows you to SPECIFICALLY bypass the property checking and
-        # set a field directly, even if its not defined
+        """Unconditionally remove the underlying document field `key`.
+
+        Note this does no type checking or field name mapping; you may use it
+        to directly modify the underlying Mongo document.
+
+        This operation can also be unvoked using `del`:
+
+        ::
+
+            >>> # Equivalent to instance.unset('attr'):
+            >>> del instance.attr
+        """
         self.add_operation('$unset', key, 1)
-        # set it in the attributes dict too
         del self.__attributes[key]
 
+    __delattr__ = unset
 
     def inc(self, key, value=1):
         """Increment the value of `key` by `value`.
         """
         self.add_operation('$inc', key, value)
 
-
     def dec(self, key, value=1):
         """Decrement the value of `key` by `value`.
         """
         self.add_operation('$inc', key, -abs(value))
-
 
     #addToSet gets special handling because we use the $each version
     def addToSet(self, key, value):
@@ -562,14 +526,6 @@ class Document(object):
         self._dbcollection.remove({'_id':self['_id']})
 
 
-
-    @classmethod
-    def cls_long_to_short(cls, long_key):
-        short_key = cls.fieldname_to_dbname.get(long_key, None)
-        if not short_key:
-            short_key = long_key
-        return short_key
-
     @classmethod
     def map_search_list(cls, search_list):
         newlist = []
@@ -593,7 +549,7 @@ class Document(object):
             elif isinstance(v, list):
                 v = cls.map_search_list(v)
 
-            k = cls.cls_long_to_short(k)
+            k = cls.long_to_short(k)
             newdict[k] = v
 
         return newdict

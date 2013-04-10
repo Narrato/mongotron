@@ -8,6 +8,8 @@ Welcome to Mongotron's documentation!
 
 Contents:
 
+.. currentmodule:: mongotron
+
 .. toctree::
    :maxdepth: 2
 
@@ -81,4 +83,12 @@ Document class
 
 .. autoclass:: mongotron.Document
     :members:
+
+
+
+
+DocumentMeta class
+##################
+
+.. autoclass:: mongotron.Document.DocumentMeta
 
