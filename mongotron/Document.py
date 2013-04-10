@@ -31,8 +31,8 @@ class DocumentMeta(type):
     mapping using :py:class:`mongotron.field_types.Field` Field instances.
     """
     def __new__(cls, name, bases, attrs):
+        required = set(attrs.get('required', []))
         field_types = {}
-        required = set()
 
         for base in bases:
             parent = base.__mro__[0]
@@ -45,7 +45,7 @@ class DocumentMeta(type):
 
         it = attrs['field_map'].iteritems()
         attrs['inverse_field_map'] = dict((k, v) for k, v in it)
-        attrs['required'] = list(required)
+        attrs['required'] = required
         attrs['field_types'] = cls.make_field_types(attrs)
         #print '----------------------------------------'
         #print attrs['structure']
@@ -76,10 +76,10 @@ class Document(object):
 
     __metaclass__ = DocumentMeta
     __should_explain = False
-    __internalfields = frozenset(['_Document__attributes',
-                                  '_Document__ops',
-                                  '_Document__operations',
-                                  '_Document__dirty_fields'])
+    __internal_fields = frozenset(['_Document__attributes',
+                                   '_Document__ops',
+                                   '_Document__operations',
+                                   '_Document__dirty_fields'])
 
     #: Map of canonical field names to objects representing the required type
     #: for that field.
@@ -109,7 +109,9 @@ class Document(object):
     def pre_save(self):
         """Hook invoked prior to creating or updating a document.
         :py:meth:`pre_save` is always invoked before :py:meth:`pre_insert` or
-        :py:meth:`pre_update`. Override in your subclass as desired."""
+        :py:meth:`pre_update`. Any mutations produced by :py:meth:`pre_save`
+        will be reflected in the saved document. Override in your subclass as
+        desired."""
 
     def post_save(self):
         """Hook invoked after a document has been created or updated
@@ -119,7 +121,9 @@ class Document(object):
 
     def pre_insert(self):
         """Hook invoked prior to document creation, but after
-        :py:meth:`pre_save`. Override in your subclass as desired."""
+        :py:meth:`pre_save`. Any mutations produced by :py:meth:`pre_insert`
+        will be reflected in the saved document. Override in your subclass as
+        desired."""
 
     def post_insert(self):
         """Hook invoked after document creation, but after
@@ -127,7 +131,9 @@ class Document(object):
 
     def pre_update(self):
         """Hook invoked prior to document update, but after
-        :py:meth:`pre_save`. Override in your subclass as desired."""
+        :py:meth:`pre_save`. Any mutations produced by :py:meth:`pre_update`
+        will be reflected in the saved document. Override in your subclass as
+        desired."""
 
     def post_update(self):
         """Hook invoked after document update, but after :py:meth:`post_save`.
@@ -173,12 +179,11 @@ class Document(object):
         self.__attributes = {}
 
         for key, field in self.field_types.iteritems():
-            short = self.long_to_short(name)
+            short = self.long_to_short(key)
             if short in doc:
-                value = field.expand(doc[short])
+                self.__attributes[key] = field.expand(doc[short])
             elif key in self.default_values:
-                value = field.make()
-            self.__attributes[key] = value
+                self.__attributes[key] = field.make()
 
 
     def __init__(self, doc=None):
@@ -247,8 +252,9 @@ class Document(object):
             if isinstance(value, (list, tuple)) \
                     and not isinstance(value, ChangeTrackingList):
                 return ChangeTrackingList(value, self, key)
-            if isinstance(attr, dict) and not isinstance(attr, ChangeTrackingDict):
-                return ChangeTrackingDict(attr, self, key)
+            if isinstance(value, dict) and not isinstance(value, ChangeTrackingDict):
+                return ChangeTrackingDict(value, self, key)
+            return value
 
     def __setattr__(self, key, value):
         if key in self.__internal_fields:
@@ -264,31 +270,12 @@ class Document(object):
         """Arrange for the Mongo operation `op` to be applied to the document
         property `key` with the operand `value` during save.
         """
-        if key not in self.structure:
+        try:
+            val = self.field_types[key].collapse(val)
+        except KeyError:
             raise KeyError('%r is not a settable key' % (key,))
 
-        # convert an assigned doc into a dict pls. we should also iterate over
-        # lists doing the same thing :/ also what about converting the other
-        # way?
-        if isinstance(val, Document):
-            val = val.document_as_dict()
-
-        # TODO: get the value_type, if its an instance of a list. then if the
-        # contents is a subclass of Document then transport that to a list of
-        # dicts
-        value_type = self.structure[key]
-
-        # if we were passed a list, iterate it
-        if isinstance(val,list):
-            newval = []
-            for passed_thing in val:
-                if isinstance(passed_thing, Document):
-                    newval.append(passed_thing.document_as_dict())
-                else:
-                    newval.append(passed_thing)
-            val = newval
-
-        # we should probably make this smarter so you can't set a top level
+        # We should probably make this smarter so you can't set a top level
         # array and a component at the same time though if you're doing that,
         # your code is broken anyway
         key = self.long_to_short(key)
@@ -320,32 +307,12 @@ class Document(object):
 
     @property
     def operations(self):
-
         # construct the $set changes
         fields = {}
         for key in self.__dirty_fields:
-
-            latest_val = self.__attributes[key]
-
-            #convert a Document to a dict
-            if isinstance(latest_val, Document):
-                latest_val = latest_val.document_as_dict()
-
-            #convert a set to a list (mongo doesn't do sets)
-            if isinstance(latest_val, set):
-                latest_val = list(latest_val)
-
-            # if its a list, convert any embedded docs to dicts!
-            if isinstance(latest_val,list):
-                newval = []
-                for passed_thing in latest_val:
-                    if isinstance(passed_thing, Document):
-                        newval.append(passed_thing.document_as_dict())
-                    else:
-                        newval.append(passed_thing)
-                latest_val = newval
-
-            fields[self.long_to_short(key)] = latest_val
+            val = self.__attributes[key]
+            val = self.field_types[key].collapse(val)
+            fields[self.long_to_short(key)] = val
 
         fields_to_set = {'$set':fields}
 
@@ -431,22 +398,28 @@ class Document(object):
 
 
     def save(self, safe=True):
+        """Insert the document into the underlying collection if it is unsaved,
+        otherwise update the existing document.
+
+            `safe`:
+                Does nothing, yet.
+        """
         self.pre_save()
         new = not self.has_id
 
-        # NOTE: this is called BEFORE we get self.operations
-        # to allow the pre_ functions to add to the set of operations
-        # for this object! (i.e. set last modified fields etc)
+        # NOTE: called BEFORE we get self.operations to allow the pre_
+        # functions to add to the set of operations. (i.e. set last modified
+        # fields etc)
         if new:
             self.pre_insert()
         else:
             self.pre_update()
 
-        # We execute the REQUIRED stuff AFTER the pre_save/insert/update
-        # as those functions may well fill in the missing required fields!
-        if not set(self.required).issubset(set(self.__attributes.keys())):
-            raise ValueError('one or more required fields are missing: %s', set(self.required)-set(self.__attributes.keys()))
-
+        # We execute the REQUIRED stuff AFTER the pre_save/insert/update as
+        # those functions may well fill in the missing required fields!
+        missing = self.required.difference(self.__attributes)
+        if missing:
+            raise TypeError('missing required fields: ' + ', '.join(missing))
 
         col = self._dbcollection
         ops = self.operations
@@ -454,13 +427,15 @@ class Document(object):
         if new:
             #if this is an insert, generate an ObjectId!
             if ops:
-                res = col.find_and_modify(query={'_id':ObjectId()}, update=ops, upsert=True, new=True)
+                res = col.find_and_modify(query={'_id':ObjectId()}, update=ops,
+                                          upsert=True, new=True)
                 self.load_dict(res)
 
             self.post_insert()
         else:
             if ops:
-                res = col.find_and_modify(query={'_id':self.__attributes['_id']}, update=ops, upsert=True, new=True)
+                res = col.find_and_modify(query={'_id':self.__attributes['_id']},
+                                          update=ops, upsert=True, new=True)
                 self.load_dict(res)
 
             self.post_update()
@@ -468,11 +443,14 @@ class Document(object):
         self.clear_ops()
         self.post_save()
 
-    # delete this document from the collection
     def delete(self):
-        if not self.has_id:
-            raise ValueError("document has no _id")
+        """Delete the underlying document. Returns ``True`` if the document was
+        deleted, otherwise ``False`` if it did not exist.
+        """
+        # TODO: parse returned ack dict to ensure a deletion occurred.
+        assert self.has_id, 'Cannot delete unsaved Document'
         self._dbcollection.remove({'_id':self['_id']})
+        return True
 
 
     @classmethod

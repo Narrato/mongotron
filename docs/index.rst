@@ -30,6 +30,33 @@ Indices and tables
 
 
 
+
+10 second tutorial
+##################
+
+::
+
+    import pymongo
+    import mongotron
+
+    mgr = mongotron.GetConnectionManager()
+    mgr.add_connection(pymongo.Connection())
+
+    class Doc(mongotron.Document):
+        __db__ = 'test'
+        structure = {
+            'name': unicode,
+            'age': int,
+            'picture': bytes,
+            'events': [int]
+        }
+
+    doc = Doc()
+    doc.name = 'Foop'
+    doc.age = 99
+    doc.save()
+
+
 Type description mini-language
 ##############################
 

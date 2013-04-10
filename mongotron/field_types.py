@@ -75,7 +75,7 @@ class ListField(Field):
 
     def __init__(self, element_type, required=False, default=UNDEFINED):
         """See Field.__init__()."""
-        assert isinstance(Field, element_type)
+        assert isinstance(element_type, Field)
         self.element_type = element_type
         Field.__init__(self, required=required, default=default)
 
@@ -110,7 +110,7 @@ class ListField(Field):
                 # Container with specific value type.
                 element_type = parse(obj[0])
             return cls(element_type, required, default)
-        elif obj == self.EMPTY_VALUE:
+        elif obj == cls.EMPTY_VALUE:
             # structure = {'foo': []}
             element_type = Field()
             return cls(element_type, required, default)
@@ -175,7 +175,9 @@ class ScalarField(Field):
     """
     def validate(self, value):
         if not isinstance(value, self.TYPES):
-            raise ValueError('value must be one of %r.' % (self.TYPES,))
+            allowed = ' or '.join(t.__name__ for t in self.TYPES)
+            actual = '%r (type %s)' % (value, type(value).__name__)
+            raise TypeError('value must type %s, not %s' % (allowed, actual))
 
     @classmethod
     def parse(cls, obj, required, default):
@@ -187,11 +189,13 @@ class ScalarField(Field):
 class BoolField(ScalarField):
     """A boolean value."""
     TYPES = (bool,)
+    DEFAULT_DEFAULT = False
 
 
 class BlobField(ScalarField):
     """A blob (bytes) value."""
     TYPES = (bytes,) # Alias of str() in Python 2.x
+    DEFAULT_DEFAULT = b''
 
     def collapse(self, value):
         """See Field.collapse(). Wrap the bytestring in a bson.Binary()
@@ -207,6 +211,7 @@ class BlobField(ScalarField):
 class UnicodeField(ScalarField):
     """A unicode value."""
     TYPES = (unicode,)
+    DEFAULT_DEFAULT = u''
 
 
 class ObjectIdField(ScalarField):
