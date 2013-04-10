@@ -71,6 +71,7 @@ class ListField(Field):
     """
     DEFAULT_DEFAULT = []
     CONTAINER_TYPE = list
+    EMPTY_VALUE = set()
 
     def __init__(self, element_type, required=False, default=UNDEFINED):
         """See Field.__init__()."""
@@ -109,6 +110,10 @@ class ListField(Field):
                 # Container with specific value type.
                 element_type = parse(obj[0])
             return cls(element_type, required, default)
+        elif obj == self.EMPTY_VALUE:
+            # structure = {'foo': []}
+            element_type = Field()
+            return cls(element_type, required, default)
 
 
 class SetField(ListField):
@@ -116,6 +121,7 @@ class SetField(ListField):
     """
     DEFAULT_DEFAULT = set()
     CONTAINER_TYPE = set
+    EMPTY_VALUE = set()
 
     def collapse(self, value):
         """See Field.collapse(). Collapse each element and return a list."""
