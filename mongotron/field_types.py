@@ -65,7 +65,6 @@ class Field(object):
         """Implement the descriptor protocol by validating and collaping the
         expanded `value` and saving it to the associated key of `obj`.
         """
-        print 'here'
         self.validate(value)
         obj.set(self.name, self.collapse(value))
 
