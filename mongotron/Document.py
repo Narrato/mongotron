@@ -36,32 +36,36 @@ class DocumentMeta(type):
 
         for base in bases:
             parent = base.__mro__[0]
-            for name in 'structure', 'default_values', 'field_map':
-                parent_dct = getattr(parent, name, {})
+            for dname in 'structure', 'default_values', 'field_map':
+                parent_dct = getattr(parent, dname, {})
                 assert isinstance(parent_dct, dict)
-                attrs[name] = dict(parent_dct, **attrs.get(name, {}))
+                attrs[dname] = dict(parent_dct, **attrs.get(dname, {}))
 
             required.update(getattr(parent, 'required', []))
 
-        attrs['required'] = required
-        attrs['field_map'] = self.make_field_map(attrs)
+        attrs['required'] = list(required)
+        attrs['field_map'] = cls.make_field_map(attrs)
         #print '----------------------------------------'
         #print attrs['structure']
         #print attrs['default_values']
         #print attrs['required']
         #print attrs['field_map']
         #print '----------------------------------------'
+        pprint(attrs)
+
         return type.__new__(cls, name, bases, attrs)
 
-    def make_field_map(self, attrs):
+    @classmethod
+    def make_field_map(cls, attrs):
         """Return a mapping of field names to :py:class:`Field` instances
         describing that field.
         """
-        attrs['field_map'] = field_map = {}
+        field_map = {}
         for name, desc in attrs['structure'].iteritems():
-            default = attrs['default_values'].get(name, field_types.MISSING)
-            required = attrs['required'].get(name, False)
+            default = attrs['default_values'].get(name, field_types.UNDEFINED)
+            required = name in attrs.get('required', [])
             field_map[name] = field_types.parse(desc, required, default)
+        return field_map
 
 
 class Document(object):
@@ -160,49 +164,16 @@ class Document(object):
 
     def load_attr_dict(self, doc, default_keys=None):
         """Reset the document to an empty state, then load keys and values from
-        the dictionary `doc`.
-        """
+        the dictionary `doc`."""
         if default_keys is None:
             default_keys = set()
         self.__attributes = {}
 
-        for k, v in doc.iteritems():
+        for key, value in doc.iteritems():
             k = self.short_to_long(k)
-
-            value_type = self.structure.get(k, None)
-
-            if value_type:
-                if isinstance(value_type, list):
-                    #todo: we expect a list of object types
-                    if not isinstance(v, list):
-                        raise ValueError('wrong type for %s wanted %s got %s' % (k, value_type, type(v)))
-
-                    thingwewant = value_type[0]
-                    newv = []
-                    for passed_thing in v:
-
-                        #TODO: replace this with something NICER PLEASE!!!
-                        # INSTANTIATING THE TYPE IS HORRIBLE AND I AM SURE IT WILL BREAK
-                        if issubclass(thingwewant, Document):
-                            passed_thing = thingwewant(passed_thing)
-                            #passed_thing._embedded = True;
-
-                        newv.append(passed_thing)
-
-                    v = newv
-                    self.__attributes[k] = v
-                #transforming things back into python types :o
-                elif not isinstance(v, value_type):
-                    #in theory this might convert a dict back into a document?
-                    self.__attributes[k] = value_type(v)
-                else:
-                    self.__attributes[k] = v
-            else:
-                self.__attributes[k] = v
-
-            #if a doc was passed in and it contains the default field, then lets not set it
+            self.field_map[k].validate(v)
+            self.__attributes[k] = v
             default_keys.discard(k)
-
 
     def load_defaults_for_keys(self, default_keys):
         # any defaults that are left after loading the doc will be
@@ -301,14 +272,12 @@ class Document(object):
 
     def __setattr__(self, key, value):
         if key in self.__internal_fields:
-            return super(Document, self).__setattr(key, value)
-        self.typed_set(key, value)
-
-    def typed_set(self, key, value):
-        if key not in self.structure:
-            raise ValueError('%s this is not a settable key' % key)
-        self.field_types[key].validate(value)
-        self.set(key, value)
+            return object.__setattr__(self, key, value)
+        else:
+            if key not in self.structure:
+                raise ValueError('%s this is not a settable key' % key)
+            self.field_types[key].validate(value)
+            self.set(key, value)
 
     # mongo operation wrappers!
     def add_operation(self, op, key, val):
@@ -329,7 +298,7 @@ class Document(object):
         # dicts
         value_type = self.structure[key]
 
-       # if we were passed a list, iterate it
+        # if we were passed a list, iterate it
         if isinstance(val,list):
             newval = []
             for passed_thing in val:
@@ -638,8 +607,6 @@ class Document(object):
         '''
         return OrderedDict()
 
-
-        #nothing to do
     def from_json_dict(self, json_dict):
         return OrderedDict()
 
@@ -649,28 +616,10 @@ class Document(object):
     def _mark_as_changed(self, key, val):
         self.mark_dirty(key)
 
-    # this is for embedding a document in another document, it convert
-    # the document into a dict so it can be embedded
-    def export_list_to_dict(self, thelist):
-        newlist = []
-        for item in thelist:
-            if isinstance(item, Document):
-                item = item.document_as_dict()
-            newlist.append(item)
-        return newlist
-
-
     def document_as_dict(self):
         retdict = {}
-        for key in self.__attributes:
-            val = self.__attributes[key]
-
-            if isinstance(val, Document):
-                val = val.document_as_dict()
-            if isinstance(val, list):
-                val = self.export_list_to_dict(val)
-            #TODO: anything else we should care about?
-
-            retdict[self.long_to_short(key)] = val
-
+        for key, val in self.__attributes.iteritems():
+            field = self.field_map[key]
+            short = self.long_to_short(key)
+            retdict[short] = field.collapse(val)
         return retdict

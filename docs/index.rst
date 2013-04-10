@@ -78,6 +78,25 @@ All list variants are ultimately persisted using the BSON array type.
         values.
 
 
+Specifying defaults
+###################
+
+Your :py:class:`Document` subclass may contain a
+:py:attr:`Document.default_values` dict, which maps the names of fields to a
+default value for them. Note the dict's contents are merged with (and
+supercede) the contents of any base classes.
+
+
+Specifying required fields
+##########################
+
+Your :py:class:`Document` subclass may contain a
+:py:attr:`Document.required_fields` list, which lists the names of all fields
+that must be set prior to save. Note the list's contents are merged with the
+contents of any base classes.
+
+
+
 Document class
 ##############
 
