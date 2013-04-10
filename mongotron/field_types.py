@@ -33,11 +33,15 @@ class Field(object):
     #: a default for the field. Used by :py:meth:`make`.
     DEFAULT_DEFAULT = None
 
-    def __init__(self, name=None, required=False, default=UNDEFINED):
+    def __init__(self, name=None, required=False, default=UNDEFINED,
+                 doc=None, readonly=False):
         """Create an instance.
         """
         self.name = name
         self.required = required
+        if doc is not None:
+            self.__doc__ = doc
+        self.readonly = readonly
         if default is UNDEFINED:
             default = self.DEFAULT_DEFAULT
         if callable(default):
@@ -65,6 +69,8 @@ class Field(object):
         """Implement the descriptor protocol by validating and collaping the
         expanded `value` and saving it to the associated key of `obj`.
         """
+        if self.readonly:
+            raise AttributeError('%r attribute is read-only' % (self.name,))
         self.validate(value)
         obj.set(self.name, self.collapse(value))
 
@@ -127,7 +133,6 @@ class ListField(Field):
             return self
         value = Field.__get__(self, obj, klass)
         return ChangeTrackingList(value or [], obj, self.name)
-
 
     def validate(self, value):
         """See Field.validate()."""
@@ -349,6 +354,10 @@ def parse(obj, **kwargs):
             Extra keyword arguments passed to Field's constructor on
             success.
     """
+    if isinstance(obj, Field):
+        # User provided a fully-formed Field instance.
+        return obj
+
     for klass in TYPE_ORDER:
         field = klass.parse(obj, **kwargs)
         if field:

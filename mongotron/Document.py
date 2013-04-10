@@ -44,8 +44,9 @@ class DocumentMeta(type):
         attrs['required'] = required
         attrs['field_types'] = cls.make_field_types(attrs)
         # Field instances are also descriptors for their corresponding
-        # attrbute.
-        attrs.update(attrs['field_types'])
+        # attribute. We use setdefault() here to avoid overriding _id().
+        for key, value in attrs['field_types'].iteritems():
+            attrs.setdefault(key, value)
 
         # print '----------------------------------------'
         # pprint(attrs)
@@ -76,7 +77,9 @@ class Document(object):
     #: Map of canonical field names to objects representing the required type
     #: for that field.
     structure = {
-        '_id': ObjectId
+        '_id': field_types.ObjectIdField(name='_id',
+            doc="""The underlying document's _id field, or ``None`` if the
+                   document has never been saved.""", readonly=True)
     }
 
     #: List of canonical field names that absolutely must be set prior to save.
@@ -194,7 +197,7 @@ class Document(object):
             getattr(self.__class__, name).__set__(self, value)
 
     def __repr__(self):
-        return "%s(%s)" % (self.__class__.__name__, dict.__repr__(self.__attributes))
+        return "%s(%r)" % (self.__class__.__name__, self.__attributes)
 
     def __contains__(self, key):
         return True if key in self.__attributes else False
@@ -212,14 +215,6 @@ class Document(object):
     @property
     def embedded(self):
         return self._embedded
-
-    @property
-    def has_id(self):
-        return '_id' in self.__attributes
-
-    @property
-    def _id(self):
-        return self.__attributes['_id'] if '_id' in self.__attributes else None
 
     def get(self, key):
         """Fetch the value of `key` from the underlying document, returning
@@ -372,7 +367,7 @@ class Document(object):
                 Does nothing, yet.
         """
         self.pre_save()
-        new = not self.has_id
+        new = self._id is None
 
         # NOTE: called BEFORE we get self.operations to allow the pre_
         # functions to add to the set of operations. (i.e. set last modified
@@ -415,7 +410,7 @@ class Document(object):
         deleted, otherwise ``False`` if it did not exist.
         """
         # TODO: parse returned ack dict to ensure a deletion occurred.
-        assert self.has_id, 'Cannot delete unsaved Document'
+        assert self._id, 'Cannot delete unsaved Document'
         self._dbcollection.remove({'_id':self['_id']})
         return True
 

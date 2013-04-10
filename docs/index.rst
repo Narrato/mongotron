@@ -155,10 +155,17 @@ database, use :py:meth:`Document.set` to unconditionally set a value.
 Document class
 ##############
 
+Saved-vs-unsaved
+++++++++++++++++
+
+.. autoattribute:: mongotron.Document._id
+
+
+Reference
++++++++++
+
 .. autoclass:: mongotron.Document
     :members:
-
-
 
 
 DocumentMeta class
