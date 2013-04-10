@@ -166,3 +166,15 @@ DocumentMeta class
 
 .. autoclass:: mongotron.Document.DocumentMeta
 
+
+
+Field class
+###########
+
+
+.. autoclass:: mongotron.field_types.Field
+    :members:
+
+
+
+

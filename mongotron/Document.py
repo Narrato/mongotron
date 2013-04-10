@@ -2,9 +2,6 @@ from ConnectionManager import GetConnectionManager
 from bson.objectid import ObjectId, InvalidId
 from Cursor import Cursor
 
-from ChangeTrackingList import ChangeTrackingList
-from ChangeTrackingDict import ChangeTrackingDict
-
 from collections import OrderedDict
 
 from mongotron import field_types
@@ -32,7 +29,6 @@ class DocumentMeta(type):
     """
     def __new__(cls, name, bases, attrs):
         required = set(attrs.get('required', []))
-        field_types = {}
 
         for base in bases:
             parent = base.__mro__[0]
@@ -47,13 +43,13 @@ class DocumentMeta(type):
         attrs['inverse_field_map'] = dict((k, v) for k, v in it)
         attrs['required'] = required
         attrs['field_types'] = cls.make_field_types(attrs)
-        #print '----------------------------------------'
-        #print attrs['structure']
-        #print attrs['default_values']
-        #print attrs['required']
-        #print attrs['field_map']
-        #print attrs['field_types']
-        #print '----------------------------------------'
+        # Field instances are also descriptors for their corresponding
+        # attrbute.
+        attrs.update(attrs['field_types'])
+
+        # print '----------------------------------------'
+        # pprint(attrs)
+        # print '----------------------------------------'
         return type.__new__(cls, name, bases, attrs)
 
     @classmethod
@@ -65,7 +61,8 @@ class DocumentMeta(type):
         for name, desc in attrs['structure'].iteritems():
             default = attrs['default_values'].get(name, field_types.UNDEFINED)
             required = name in attrs.get('required', [])
-            types[name] = field_types.parse(desc, required, default)
+            types[name] = field_types.parse(desc, required=required,
+                                            default=default, name=name)
         return types
 
 
@@ -73,13 +70,8 @@ class Document(object):
     """A class with property-style access. It maps attribute access to an
     internal dictionary, and tracks changes.
     """
-
     __metaclass__ = DocumentMeta
     __should_explain = False
-    __internal_fields = frozenset(['_Document__attributes',
-                                   '_Document__ops',
-                                   '_Document__operations',
-                                   '_Document__dirty_fields'])
 
     #: Map of canonical field names to objects representing the required type
     #: for that field.
@@ -185,13 +177,21 @@ class Document(object):
             elif key in self.default_values:
                 self.__attributes[key] = field.make()
 
-
     def __init__(self, doc=None):
         self.__attributes = {}
         self.clear_ops()
         if doc:
             self.load_dict(doc)
 
+    def __setattr__(self, name, value):
+        """Nasty guard to prevent object writes for nonexistent attributes. It
+        should be possible to replace this with the ``__slots__`` mechanism,
+        but there is some apparent incompatibility with using metaclasses and
+        weakrefs simultaneously."""
+        if name.startswith('_Document__'):
+            vars(self)[name] = value
+        else:
+            getattr(self.__class__, name).__set__(self, value)
 
     def __repr__(self):
         return "%s(%s)" % (self.__class__.__name__, dict.__repr__(self.__attributes))
@@ -221,49 +221,16 @@ class Document(object):
     def _id(self):
         return self.__attributes['_id'] if '_id' in self.__attributes else None
 
+    def get(self, key):
+        """Fetch the value of `key` from the underlying document, returning
+        ``None`` if the value does not exist."""
+        return self.__attributes.get(self.long_to_short(key))
+
     def get_attributes(self):
         return self.__attributes
 
     def set_attributes(self, attrs):
         self.__attributes = attrs
-
-    def __getattr__(self, key):
-        if key not in self.structure:
-            return object.__getattribute__(self, key)
-
-        #TODO: wrap lists & dictionaries in a mutation tracking version
-        # which can push changes back up into our change set pls!
-        value_type = self.structure[key]
-
-        if key not in self.__attributes:
-            #TODO: make this awesome please
-            if isinstance(value_type, set):
-                return set()
-            if isinstance(value_type, list):
-                return ChangeTrackingList([], self, key)
-            if isinstance( value_type, dict ):
-                return ChangeTrackingDict({}, self, key)
-        else:
-            value = self.__attributes[key]
-            # If the structure was a set() then make damned sure we return a
-            # set!
-            if isinstance(value, list) and isinstance(value_type, set):
-                return set(value)
-            if isinstance(value, (list, tuple)) \
-                    and not isinstance(value, ChangeTrackingList):
-                return ChangeTrackingList(value, self, key)
-            if isinstance(value, dict) and not isinstance(value, ChangeTrackingDict):
-                return ChangeTrackingDict(value, self, key)
-            return value
-
-    def __setattr__(self, key, value):
-        if key in self.__internal_fields:
-            return object.__setattr__(self, key, value)
-        else:
-            if key not in self.structure:
-                raise ValueError('%s this is not a settable key' % key)
-            self.field_types[key].validate(value)
-            self.set(key, value)
 
     # mongo operation wrappers!
     def add_operation(self, op, key, val):
@@ -361,8 +328,8 @@ class Document(object):
             >>> # Equivalent to instance.unset('attr'):
             >>> del instance.attr
         """
-        self.add_operation('$unset', key, 1)
         del self.__attributes[key]
+        self.add_operation('$unset', key, 1)
 
     __delattr__ = unset
 

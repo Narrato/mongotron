@@ -2,9 +2,15 @@
 Implementations of field type parsing, validation, and encoding.
 """
 
+from __future__ import absolute_import
+
 import copy
 import bson
 import bson.objectid
+
+from mongotron.ChangeTrackingDict import ChangeTrackingDict
+from mongotron.ChangeTrackingList import ChangeTrackingList
+
 
 
 #: Represent an undefined argument, since None is a valid field value.
@@ -16,14 +22,21 @@ class Field(object):
 
     If the default field value is a function, it will be invoked each time a
     default is required. The default value must pass :py:meth:`validate`.
+
+    Field instances are also descriptors: they implement ``__get__`` and
+    ``__set__``, automatically invoking :py:meth:`expand` and
+    :py:meth:`collapse` as necessary. For super special field types (like
+    lists), you may directly override ``__get__`` and ``__set__`` to generate
+    semantic operations rather than simple property overrides.
     """
     #: Default 'default' value used if user type specification does not include
     #: a default for the field. Used by :py:meth:`make`.
     DEFAULT_DEFAULT = None
 
-    def __init__(self, required=False, default=UNDEFINED):
+    def __init__(self, name=None, required=False, default=UNDEFINED):
         """Create an instance.
         """
+        self.name = name
         self.required = required
         if default is UNDEFINED:
             default = self.DEFAULT_DEFAULT
@@ -33,6 +46,28 @@ class Field(object):
         else:
             self.default = default
         self.validate(self.make())
+
+    def __get__(self, obj, klass):
+        """Implement the descriptor protocol by fetching the collapsed
+        attribute from the :py:class:`Document` if it exists, expanding and
+        returning it, otherwise return the default value if one is set,
+        otherwise ``None``.
+        """
+        if obj is None:
+            return self
+        value = obj.get(self.name)
+        if value is None:
+            return self.make()
+        else:
+            return self.expand(value)
+
+    def __set__(self, obj, value):
+        """Implement the descriptor protocol by validating and collaping the
+        expanded `value` and saving it to the associated key of `obj`.
+        """
+        print 'here'
+        self.validate(value)
+        obj.set(self.name, self.collapse(value))
 
     def validate(self, value):
         """Raise an exception if `value` is not a suitable value for this
@@ -52,13 +87,20 @@ class Field(object):
         return value
 
     @classmethod
-    def parse(cls, obj, required, default):
+    def parse(cls, obj, **kwargs):
         """Attempt to parse `obj` as a type description defined in the
         Mongotron mini-language. If `obj` is unrecognizable, return ``None``,
         otherwise return a :py:class:`Field` instance describing it.
+
+            `obj`:
+                The mini-language object to attempt to parse.
+
+            `kwargs`:
+                Extra keyword arguments passed to Field's constructor on
+                success.
         """
         if obj is None: # "None" means any value.
-            return cls(required=required, default=default)
+            return cls(**kwargs)
 
     def make(self):
         """Produce a default value for this field."""
@@ -73,11 +115,20 @@ class ListField(Field):
     CONTAINER_TYPE = list
     EMPTY_VALUE = set()
 
-    def __init__(self, element_type, required=False, default=UNDEFINED):
+    def __init__(self, element_type, **kwargs):
         """See Field.__init__()."""
         assert isinstance(element_type, Field)
         self.element_type = element_type
-        Field.__init__(self, required=required, default=default)
+        Field.__init__(self, **kwargs)
+
+    def __get__(self, obj, klass):
+        """See Field.__get__. Returns a :py:class:`ChangeTrackingList` that
+        generates semantic actions based on user modifications."""
+        if obj is None:
+            return self
+        value = Field.__get__(self, obj, klass)
+        return ChangeTrackingList(value or [], obj, self.name)
+
 
     def validate(self, value):
         """See Field.validate()."""
@@ -99,7 +150,7 @@ class ListField(Field):
         return value
 
     @classmethod
-    def parse(cls, obj, required, default):
+    def parse(cls, obj, **kwargs):
         """See Field.parse()."""
         # len(obj) > 1 is handled by FixedListField.
         if type(obj) is cls.CONTAINER_TYPE and len(obj) < 2:
@@ -109,11 +160,11 @@ class ListField(Field):
             else:
                 # Container with specific value type.
                 element_type = parse(obj[0])
-            return cls(element_type, required, default)
+            return cls(element_type, **kwargs)
         elif obj == cls.EMPTY_VALUE:
             # structure = {'foo': []}
             element_type = Field()
-            return cls(element_type, required, default)
+            return cls(element_type, **kwargs)
 
 
 class SetField(ListField):
@@ -135,13 +186,16 @@ class SetField(ListField):
 class FixedListField(Field):
     """A specifically sized list containing specifically typed elements.
     """
-    def __init__(self, element_types, required=False, default=UNDEFINED):
+    def __init__(self, element_types, default=UNDEFINED, **kwargs):
         """See Field.__init__()."""
         assert all(isinstance(Field, e) for e in element_types)
         self.element_types = element_types
         if default is UNDEFINED:
             default = [fld.make() for fld in element_types]
-        Field.__init__(self, required=required, default=default)
+        Field.__init__(self, default=default, **kwargs)
+
+    #: Borrow ListField's __get__ method.
+    __get__ = ListField.__get__
 
     def validate(self, value):
         """See Field.validate()."""
@@ -164,10 +218,10 @@ class FixedListField(Field):
                 for i, elem in enumerate(value)]
 
     @classmethod
-    def parse(cls, obj, required, default):
+    def parse(cls, obj, **kwargs):
         """See Field.parse()."""
         if type(obj) is list and len(obj) > 1:
-            return cls(element_types=map(parse, obj))
+            return cls(element_types=map(parse, obj), **kwargs)
 
 
 class ScalarField(Field):
@@ -180,10 +234,10 @@ class ScalarField(Field):
             raise TypeError('value must type %s, not %s' % (allowed, actual))
 
     @classmethod
-    def parse(cls, obj, required, default):
+    def parse(cls, obj, **kwargs):
         """See Field.parse()."""
         if obj in cls.TYPES:
-            return cls(required=required, default=default)
+            return cls(**kwargs)
 
 
 class BoolField(ScalarField):
@@ -243,13 +297,13 @@ class FloatField(ScalarField):
 class DocumentField(Field):
     """A field containing a sub-document.
     """
-    def __init__(self, doc_type, required=False, default=UNDEFINED):
+    def __init__(self, doc_type, **kwargs):
         """See Field.__init__()."""
         if default is UNDEFINED:
             default = doc_type()
         self.doc_types = doc_type
         self.TYPES = (doc_type,)
-        Field.__init__(self, required, default)
+        Field.__init__(self, default=default, **kwargs)
 
     def collapse(self, value):
         """Return the document value as a dictionary."""
@@ -260,12 +314,12 @@ class DocumentField(Field):
         return self.doc_type(doc=value)
 
     @classmethod
-    def parse(cls, obj, required, default):
+    def parse(cls, obj, **kwargs):
         """See Field.parse()."""
         # TODO: cyclical imports bad design
         from mongotron.Document import Document
         if issubclass(obj, Document):
-            return cls(obj, required=required, deafult=default)
+            return cls(obj, **kwargs)
 
 
 #: List of Field classes in the order in which parsing should be attempted.
@@ -285,12 +339,19 @@ TYPE_ORDER = [
 ]
 
 
-def parse(obj, required=False, default=UNDEFINED):
+def parse(obj, **kwargs):
     """Given some mini-language description of a field type, return a Field
     instance describing that type.
+
+        `obj`:
+            The mini-language object to attempt to parse.
+
+        `kwargs`:
+            Extra keyword arguments passed to Field's constructor on
+            success.
     """
     for klass in TYPE_ORDER:
-        field = klass.parse(obj, required, default)
+        field = klass.parse(obj, **kwargs)
         if field:
             return field
     raise ValueError('%r cannot be parsed as a field type.' % (obj,))
