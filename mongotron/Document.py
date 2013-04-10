@@ -43,29 +43,30 @@ class DocumentMeta(type):
 
             required.update(getattr(parent, 'required', []))
 
+        it = attrs['field_map'].iteritems()
+        attrs['inverse_field_map'] = dict((k, v) for k, v in it)
         attrs['required'] = list(required)
-        attrs['field_map'] = cls.make_field_map(attrs)
+        attrs['field_types'] = cls.make_field_types(attrs)
         #print '----------------------------------------'
         #print attrs['structure']
         #print attrs['default_values']
         #print attrs['required']
         #print attrs['field_map']
+        #print attrs['field_types']
         #print '----------------------------------------'
-        pprint(attrs)
-
         return type.__new__(cls, name, bases, attrs)
 
     @classmethod
-    def make_field_map(cls, attrs):
+    def make_field_types(cls, attrs):
         """Return a mapping of field names to :py:class:`Field` instances
         describing that field.
         """
-        field_map = {}
+        types = {}
         for name, desc in attrs['structure'].iteritems():
             default = attrs['default_values'].get(name, field_types.UNDEFINED)
             required = name in attrs.get('required', [])
-            field_map[name] = field_types.parse(desc, required, default)
-        return field_map
+            types[name] = field_types.parse(desc, required, default)
+        return types
 
 
 class Document(object):
@@ -100,6 +101,10 @@ class Document(object):
     #: Map of shortened field names to canonical field names. Automatically
     #: populated by metaclass.
     inverse_field_map = {}
+
+    #: Map of canonical field names to Field instances describing the field.
+    #: Automatically populated by metaclass.
+    field_types = {}
 
     def pre_save(self):
         """Hook invoked prior to creating or updating a document.
@@ -162,50 +167,25 @@ class Document(object):
         `short_key` if no canonical version exists."""
         return self.inverse_field_map.get(short_key, short_key)
 
-    def load_attr_dict(self, doc, default_keys=None):
+    def load_dict(self, doc):
         """Reset the document to an empty state, then load keys and values from
         the dictionary `doc`."""
-        if default_keys is None:
-            default_keys = set()
         self.__attributes = {}
 
-        for key, value in doc.iteritems():
-            k = self.short_to_long(k)
-            self.field_map[k].validate(v)
-            self.__attributes[k] = v
-            default_keys.discard(k)
-
-    def load_defaults_for_keys(self, default_keys):
-        # any defaults that are left after loading the doc will be
-        # set up now, if its callable it will be called
-        for dk in default_keys:
-            new_value = self.default_values[dk]
-
-            if callable(new_value):
-                new_value = new_value()
-            elif isinstance(new_value, dict):
-                new_value = deepcopy(new_value)
-            elif isinstance(new_value, list):
-                new_value = new_value[:]
-
-            # we call set here so that its saved back to the db
-            self.set(dk,new_value)
-
-    def load_dict(self, dicttoload):
-        default_keys = set(self.default_values.keys())
-        self.load_attr_dict(dicttoload or {}, default_keys)
-        self.load_defaults_for_keys(default_keys)
+        for key, field in self.field_types.iteritems():
+            short = self.long_to_short(name)
+            if short in doc:
+                value = field.expand(doc[short])
+            elif key in self.default_values:
+                value = field.make()
+            self.__attributes[key] = value
 
 
     def __init__(self, doc=None):
         self.__attributes = {}
-
-        for k in self.field_map:
-            v = self.field_map[k]
-            self.inverse_field_map[v] = k
-
         self.clear_ops()
-        self.load_dict(doc)
+        if doc:
+            self.load_dict(doc)
 
 
     def __repr__(self):
@@ -617,9 +597,11 @@ class Document(object):
         self.mark_dirty(key)
 
     def document_as_dict(self):
-        retdict = {}
+        """Return a dict representation of the document suitable for encoding
+        as BSON."""
+        dct = {}
         for key, val in self.__attributes.iteritems():
-            field = self.field_map[key]
+            field = self.field_types[key]
             short = self.long_to_short(key)
             retdict[short] = field.collapse(val)
-        return retdict
+        return dct

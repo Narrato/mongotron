@@ -3,6 +3,7 @@ Implementations of field type parsing, validation, and encoding.
 """
 
 import copy
+import bson
 import bson.objectid
 
 
@@ -14,8 +15,7 @@ class Field(object):
     """Default field type, does no validation, accepts anything.
 
     If the default field value is a function, it will be invoked each time a
-    default is required, otherwise the default value must pass
-    :py:meth:`validate`.
+    default is required. The default value must pass :py:meth:`validate`.
     """
     #: Default 'default' value used if user type specification does not include
     #: a default for the field. Used by :py:meth:`make`.
@@ -28,6 +28,7 @@ class Field(object):
         if default is UNDEFINED:
             default = self.DEFAULT_DEFAULT
         if callable(default):
+            # Shadow Field.make() using the user-provided callable.
             self.make = default
         else:
             self.default = default
@@ -61,7 +62,7 @@ class Field(object):
 
     def make(self):
         """Produce a default value for this field."""
-        return copy.copy(self.default)
+        return copy.deepcopy(self.default)
 
 
 class ListField(Field):
@@ -177,6 +178,31 @@ class ScalarField(Field):
             return cls(required=required, default=default)
 
 
+class BoolField(ScalarField):
+    """A boolean value."""
+    TYPES = (bool,)
+
+
+class BlobField(ScalarField):
+    """A blob (bytes) value."""
+    TYPES = (bytes,) # Alias of str() in Python 2.x
+
+    def collapse(self, value):
+        """See Field.collapse(). Wrap the bytestring in a bson.Binary()
+        instance."""
+        return bson.Binary(value)
+
+    def expand(self, value):
+        """See Field.expand(). Unwrap the bson.Binary() instance into a
+        bytestring."""
+        return str(value)
+
+
+class UnicodeField(ScalarField):
+    """A unicode value."""
+    TYPES = (unicode,)
+
+
 class ObjectIdField(ScalarField):
     """A scalar field that must contain a BSON ObjectID.
     """
@@ -233,6 +259,9 @@ TYPE_ORDER = [
     ListField,
     SetField,
     FixedListField,
+    BoolField,
+    BlobField,
+    UnicodeField,
     IntField,
     FloatField,
     ObjectIdField,

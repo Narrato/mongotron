@@ -37,15 +37,35 @@ Basic
 +++++
 
     ``None``:
-        The associated property can be set to any value.
+        The value can be any value.
+
+    ``bool``
+        The property must be ``True`` or ``False``.
+
+    ``str``, ``bytes``
+        The property must be a Python 2.x ``str()`` or a Python 3.x ``bytes()``
+        instance. The resulting value is is serialized as a BSON.Binary().
+
+    ``unicode``:
+        The property must be a Unicode string.
 
     ``int``, ``long``:
-        The associated property must be an integral value. Note that ``int``
-        and ``long`` mean the same thing and are interchangeable; either type
-        will be accepted.
+        The property must be an integral value. Note that ``int`` and ``long``
+        mean the same thing and are interchangeable; either type will be
+        accepted.
 
     ``float``:
-        The associated property must be a floating point value.
+        The property must be a floating point value.
+
+
+Documents
++++++++++
+
+Any :py:class:`Document` subclass can be used as a type. In this case, the
+:py:meth:`Document.document_as_dict` is invoked on it and the resulting dict is
+stored in the parent :py:class:`Document`.
+
+[TBD: limitations, etc.]
 
 
 Lists
