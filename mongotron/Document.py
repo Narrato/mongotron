@@ -166,6 +166,7 @@ class Document(object):
     def load_dict(self, doc):
         """Reset the document to an empty state, then load keys and values from
         the dictionary `doc`."""
+        self.clear_ops()
         self.__attributes = {}
         for key, field in self.field_types.iteritems():
             short = self.long_to_short(key)
@@ -175,10 +176,7 @@ class Document(object):
                 self.__attributes[key] = field.make()
 
     def __init__(self, doc=None):
-        self.__attributes = {}
-        self.clear_ops()
-        if doc:
-            self.load_dict(doc)
+        self.load_dict(doc or {})
 
     def __setattr__(self, name, value):
         """Nasty guard to prevent object writes for nonexistent attributes. It
