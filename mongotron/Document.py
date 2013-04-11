@@ -177,7 +177,7 @@ class Document(object):
         for key, field in self.field_types.iteritems():
             short = self.long_to_short(key)
             if short in doc:
-                self.__attributes[key] = field.expand(doc[short])
+                self.__attributes[key] = doc[short]
             elif key in self.default_values:
                 self.set(key, field.make())
 
@@ -219,12 +219,6 @@ class Document(object):
         ``None`` if the value does not exist."""
         return self.__attributes.get(key)
 
-    def get_attributes(self):
-        return self.__attributes
-
-    def set_attributes(self, attrs):
-        self.__attributes = attrs
-
     # mongo operation wrappers!
     def add_operation(self, op, key, val):
         """Arrange for the Mongo operation `op` to be applied to the document
@@ -265,12 +259,8 @@ class Document(object):
     @property
     def operations(self):
         # construct the $set changes
-        fields = {}
-        for key in self.__dirty_fields:
-            val = self.__attributes[key]
-            val = self.field_types[key].collapse(val)
-            fields[self.long_to_short(key)] = val
-
+        fields = dict((self.long_to_short(key), self.__attributes[key])
+                       for key in self.__dirty_fields)
         #merge the operations and the set of changes
         return dict(self.__ops, **{'$set': fields})
 
@@ -523,12 +513,6 @@ class Document(object):
 
     def from_json_dict(self, json_dict):
         return OrderedDict()
-
-
-    #change tracking stuff calls this
-    #TODO: needs to be more advanced
-    def _mark_as_changed(self, key, val):
-        self.mark_dirty(key)
 
     def document_as_dict(self):
         """Return a dict representation of the document suitable for encoding
