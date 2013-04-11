@@ -39,10 +39,7 @@ class DocumentMeta(type):
         for base in bases:
             parent = base.__mro__[0]
             for dname in 'structure', 'default_values', 'field_map':
-                parent_dct = getattr(parent, dname, {})
-                assert isinstance(parent_dct, dict)
-                attrs[dname] = dict(parent_dct, **attrs.get(dname, {}))
-
+                cls.merge_carefully(parent, dname, attrs)
             required.update(getattr(parent, 'required', []))
 
         it = attrs['field_map'].iteritems()
@@ -59,6 +56,19 @@ class DocumentMeta(type):
         # pprint(attrs)
         # print '----------------------------------------'
         return type.__new__(cls, name, bases, attrs)
+
+    @classmethod
+    def merge_carefully(cls, base, dname, attrs):
+        """Merge the contents a base class attribute's dictionary into the
+        child, complaining bitterly if a duplicate entry exists."""
+        base_dct = getattr(base, dname, {})
+        dct = attrs.setdefault(dname, {})
+        assert all(type(d) is dict for d in (base_dct, dct))
+        for key, value in base_dct.iteritems():
+            if key in dct and key != '_id':
+                raise TypeError('duplicate %r of dict %r appears in base %r' %\
+                                (key, dname, base))
+            dct[key] = value
 
     @classmethod
     def make_collection_name(cls, name, attrs):
