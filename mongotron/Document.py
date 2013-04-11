@@ -1,10 +1,16 @@
-from ConnectionManager import GetConnectionManager
-from bson.objectid import ObjectId, InvalidId
-from Cursor import Cursor
 
+from __future__ import absolute_import
+
+import logging
 from collections import OrderedDict
 
+from bson.objectid import ObjectId, InvalidId
+
+from mongotron.ConnectionManager import GetConnectionManager
+from mongotron.Cursor import Cursor
 from mongotron import field_types
+
+LOG = logging.getLogger('mongotron.Document')
 
 
 class classproperty(object):
@@ -173,7 +179,7 @@ class Document(object):
             if short in doc:
                 self.__attributes[key] = field.expand(doc[short])
             elif key in self.default_values:
-                self.__attributes[key] = field.make()
+                self.set(key, field.make())
 
     def __init__(self, doc=None):
         self.load_dict(doc or {})
@@ -224,10 +230,11 @@ class Document(object):
         """Arrange for the Mongo operation `op` to be applied to the document
         property `key` with the operand `value` during save.
         """
-        try:
-            val = self.field_types[key].collapse(val)
-        except KeyError:
-            raise KeyError('%r is not a settable key' % (key,))
+        if op != '$unset':
+            try:
+                val = self.field_types[key].collapse(val)
+            except KeyError:
+                raise KeyError('%r is not a settable key' % (key,))
 
         # We should probably make this smarter so you can't set a top level
         # array and a component at the same time though if you're doing that,
@@ -309,7 +316,7 @@ class Document(object):
             >>> # Equivalent to instance.unset('attr'):
             >>> del instance.attr
         """
-        del self.__attributes[key]
+        self.__attributes.pop(key, None)
         self.add_operation('$unset', key, 1)
 
     __delattr__ = unset
@@ -371,6 +378,7 @@ class Document(object):
 
         col = self._dbcollection
         ops = self.operations
+        LOG.debug('operations: %r', ops)
 
         if new:
             #if this is an insert, generate an ObjectId!
@@ -525,9 +533,5 @@ class Document(object):
     def document_as_dict(self):
         """Return a dict representation of the document suitable for encoding
         as BSON."""
-        dct = {}
-        for key, val in self.__attributes.iteritems():
-            field = self.field_types[key]
-            short = self.long_to_short(key)
-            retdict[short] = field.collapse(val)
-        return dct
+        return dict((self.long_to_short(key), val)
+                    for key, val in self.__attributes.iteritems())

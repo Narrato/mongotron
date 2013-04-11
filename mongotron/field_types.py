@@ -91,8 +91,11 @@ class Field(object):
         """
         if self.readonly:
             raise AttributeError('%r attribute is read-only' % (self.name,))
-        self.validate(value)
-        obj.set(self.name, self.collapse(value))
+        if value is None:
+            obj.unset(self.name)
+        else:
+            self.validate(value)
+            obj.set(self.name, self.collapse(value))
 
     def validate(self, value):
         """Raise an exception if `value` is not a suitable value for this
@@ -366,8 +369,9 @@ class ScalarField(Field):
     def validate(self, value):
         if not isinstance(value, self._TYPES):
             allowed = ' or '.join(t.__name__ for t in self._TYPES)
-            actual = '%r (type %s)' % (value, type(value).__name__)
-            raise TypeError('value must type %s, not %s' % (allowed, actual))
+            actual = '%s (%r)' % (type(value).__name__, value)
+            raise TypeError('field %s: value must %s, not %s' %\
+                (self.name, allowed, actual))
 
     @classmethod
     def parse(cls, obj, **kwargs):
@@ -500,7 +504,7 @@ class DocumentField(Field):
         """See Field.__init__()."""
         if default is None:
             default = doc_type()
-        self.doc_types = doc_type
+        self.doc_type = doc_type
         self._TYPES = (doc_type,)
         Field.__init__(self, default=default, **kwargs)
 
