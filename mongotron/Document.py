@@ -52,10 +52,8 @@ class DocumentMeta(type):
         attrs['__collection__'] = cls.make_collection_name(name, attrs)
         attrs.setdefault('__manager__', GetConnectionManager())
         attrs.setdefault('__connection__', None)
-        # Field instances are also descriptors for their corresponding
-        # attribute. We use setdefault() here to avoid overriding _id().
-        for key, value in attrs['field_types'].iteritems():
-            attrs.setdefault(key, value)
+        # Fields are descriptors for their corresponding attribute.
+        attrs.update(attrs['field_types'])
 
         # print '----------------------------------------'
         # pprint(attrs)
