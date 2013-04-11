@@ -43,6 +43,9 @@ class DocumentMeta(type):
         attrs['inverse_field_map'] = dict((k, v) for k, v in it)
         attrs['required'] = required
         attrs['field_types'] = cls.make_field_types(attrs)
+        attrs['__collection__'] = cls.make_collection_name(name, attrs)
+        attrs.setdefault('__manager__', GetConnectionManager())
+        attrs.setdefault('__connection__', None)
         # Field instances are also descriptors for their corresponding
         # attribute. We use setdefault() here to avoid overriding _id().
         for key, value in attrs['field_types'].iteritems():
@@ -54,13 +57,19 @@ class DocumentMeta(type):
         return type.__new__(cls, name, bases, attrs)
 
     @classmethod
+    def make_collection_name(cls, name, attrs):
+        """Form a collection name for the class, or use the user-provided
+        name."""
+        return str(attrs.get('__collection__', name.lower()))
+
+    @classmethod
     def make_field_types(cls, attrs):
         """Return a mapping of field names to :py:class:`Field` instances
         describing that field.
         """
         types = {}
         for name, desc in attrs['structure'].iteritems():
-            default = attrs['default_values'].get(name, field_types.UNDEFINED)
+            default = attrs['default_values'].get(name)
             required = name in attrs.get('required', [])
             types[name] = field_types.parse(desc, required=required,
                                             default=default, name=name)
@@ -136,27 +145,11 @@ class Document(object):
 
     @classproperty
     def _dbcollection(cls):
-        connectionname = getattr(cls, '__connection__', None)
-
-        db = getattr(cls, '__db__', None)
-        if db is None:
-            raise StandardError('__db__ field is not set on your object!')
-
-        collection = getattr(cls, '__collection__', None)
-        if collection:
-            col_name = str(collection)
-        else:
-            col_name = str(cls.__name__.lower())
-
-        connection = GetConnectionManager().get_connection(connectionname, True)
-        return connection[db][col_name]
-
-
-    def key_in_structure(self, key):
-        type_ = self.structure.get(key, None)
-        if type_:
-            return True
-        raise AttributeError('%r has no field %r' % (self.__class__, key))
+        conn = cls.__manager__.get_connection(cls.__connection__, True)
+        try:
+            return conn[cls.__db__][cls.__collection__]
+        except AttributeError:
+            raise AttributeError('__db__ field is not set on your object!')
 
     @classmethod
     def long_to_short(cls, long_key):
@@ -174,7 +167,6 @@ class Document(object):
         """Reset the document to an empty state, then load keys and values from
         the dictionary `doc`."""
         self.__attributes = {}
-
         for key, field in self.field_types.iteritems():
             short = self.long_to_short(key)
             if short in doc:
@@ -202,7 +194,7 @@ class Document(object):
         return "%s(%r)" % (self.__class__.__name__, self.__attributes)
 
     def __contains__(self, key):
-        return True if key in self.__attributes else False
+        return key in self.__attributes
 
     def __eq__(self, other):
         return (self.__class__ == other.__class__ and
@@ -212,16 +204,16 @@ class Document(object):
     def __hash__(self):
         return hash(self._id)
 
-    # for future embedded docs, will stop save() from working
-    # and will let the parent know it can be converted into a dict!
     @property
     def embedded(self):
+        """For future embedded docs, will stop save() from working and will let
+        the parent know it can be converted into a dict!"""
         return self._embedded
 
     def get(self, key):
         """Fetch the value of `key` from the underlying document, returning
         ``None`` if the value does not exist."""
-        return self.__attributes.get(self.long_to_short(key))
+        return self.__attributes.get(key)
 
     def get_attributes(self):
         return self.__attributes
@@ -259,11 +251,7 @@ class Document(object):
             else:
                 param_list.append(val)
         else:
-            if key not in op_dict:
-                op_dict[key] = []
-
-            param_list = op_dict[key]
-
+            param_list = op_dict.setdefault(key, [])
             if isinstance(val, list):
                 param_list.extend(val)
             else:
@@ -278,10 +266,8 @@ class Document(object):
             val = self.field_types[key].collapse(val)
             fields[self.long_to_short(key)] = val
 
-        fields_to_set = {'$set':fields}
-
         #merge the operations and the set of changes
-        return dict(self.__ops.items() + fields_to_set.items())
+        return dict(self.__ops, **{'$set': fields})
 
 
     def clear_ops(self):

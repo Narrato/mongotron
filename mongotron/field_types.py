@@ -13,13 +13,28 @@ from mongotron.ChangeTrackingDict import ChangeTrackingDict
 from mongotron.ChangeTrackingList import ChangeTrackingList
 
 
-
-#: Represent an undefined argument, since None is a valid field value.
-UNDEFINED = object()
+def is_basic(*fields):
+    """Return ``True`` if all :py:class:`Field` instances from `types` have
+    default :py:meth:`Field.expand` and :py:meth:`Field.collapse`
+    implementations. This permits avoiding a few expensive operations."""
+    expect = (Field.collapse.im_func, Field.expand.im_func)
+    try:
+        for field in fields:
+            if expect != (field.collapse.im_func, field.expand.im_func):
+                return False
+    except AttributeError:
+        return False
+    return True
 
 
 class Field(object):
-    """Default field type, does no validation, accepts anything.
+    """Default field type, does no validation, accepts anything. Created by
+    passing ``None`` as the field type:
+
+        ::
+
+            class Foo(Document):
+                structure = {'anything': None}
 
     If the default field value is a function, it will be invoked each time a
     default is required. The default value must pass :py:meth:`validate`.
@@ -32,9 +47,9 @@ class Field(object):
     """
     #: Default 'default' value used if user type specification does not include
     #: a default for the field. Used by :py:meth:`make`.
-    DEFAULT_DEFAULT = None
+    _DEFAULT = None
 
-    def __init__(self, name=None, required=False, default=UNDEFINED,
+    def __init__(self, name=None, required=False, default=None,
                  doc=None, readonly=False):
         """Create an instance.
         """
@@ -43,15 +58,18 @@ class Field(object):
         if doc is not None:
             self.__doc__ = doc
         self.readonly = readonly
-        if default is UNDEFINED:
-            default = self.DEFAULT_DEFAULT
+        if default is None:
+            default = self._DEFAULT
         if callable(default):
             # Shadow Field.make() using the user-provided callable.
             self.make = default
         else:
             self.default = default
-        # TODO: commented out until None vs. DEFAULT mess fixed.
+        # TODO: commented out until None vs. _DEFAULT mess fixed.
         #self.validate(self.make())
+
+    def __repr__(self):
+        return '<%s name=%r>' % (self.__class__.__name__, self.name)
 
     def __get__(self, obj, klass):
         """Implement the descriptor protocol by fetching the collapsed
@@ -68,7 +86,7 @@ class Field(object):
             return self.expand(value)
 
     def __set__(self, obj, value):
-        """Implement the descriptor protocol by validating and collaping the
+        """Implement the descriptor protocol by validating and collapsing the
         expanded `value` and saving it to the associated key of `obj`.
         """
         if self.readonly:
@@ -116,16 +134,30 @@ class Field(object):
 
 class ListField(Field):
     """List validator. Ensure value type is a list, and that each element
-    validates using the given element field type.
+    validates using the given element field type. Created by either referencing
+    the ``list`` type, or an empty list:
+
+        ::
+
+            class Foo(Document):
+                structure = {'list_one': list,  # Equivalent
+                             'list_two': []}    # Equivalent
+
+    Or by specifing a size-1 list whose element represents a specific type:
+
+        ::
+
+            class Foo(Document):
+                structure = {'int_list': [int]}
     """
-    DEFAULT_DEFAULT = []
+    _DEFAULT = []
     CONTAINER_TYPE = list
     EMPTY_VALUE = set()
 
     def __init__(self, element_type, **kwargs):
         """See Field.__init__()."""
-        assert isinstance(element_type, Field)
-        self.element_type = element_type
+        self.element_type = parse(element_type)
+        self.basic = is_basic(element_type)
         Field.__init__(self, **kwargs)
 
     def __get__(self, obj, klass):
@@ -145,15 +177,15 @@ class ListField(Field):
 
     def collapse(self, value):
         """See Field.collapse(). Collapse each element in turn."""
-        if self.element_type.collapse != Field.collapse:
-            value = map(self.element_type.collapse, value)
-        return value
+        if self.basic:
+            return value
+        return map(self.element_type.collapse, value)
 
     def expand(self, value):
         """See Field.expand(). Expand each element in turn."""
-        if self.element_type.expand != Field.expand:
-            value = map(self.element_type.expand, value)
-        return value
+        if self.basic:
+            return value
+        return map(self.element_type.expand, value)
 
     @classmethod
     def parse(cls, obj, **kwargs):
@@ -174,9 +206,22 @@ class ListField(Field):
 
 
 class SetField(ListField):
-    """Like ListField, except require set() instances instead.
+    """Like ListField, except require set() instances instead. Created either
+    by referencing the ``set`` type:
+
+        ::
+
+            class Foo(Document):
+                structure = {'set_fld': set}
+
+    Or by specifing a size-1 set whose element represents a specific type:
+
+        ::
+
+            class Foo(Document):
+                structure = {'set_fld': set([int])}
     """
-    DEFAULT_DEFAULT = set()
+    _DEFAULT = set()
     CONTAINER_TYPE = set
     EMPTY_VALUE = set()
 
@@ -191,12 +236,24 @@ class SetField(ListField):
 
 class FixedListField(Field):
     """A specifically sized list containing specifically typed elements.
+
+    Created by specifying a list of more than one element, where each element
+    is a reference to some other type:
+
+        ::
+
+            class Foo(Document):
+                structure = {'fixed': [bool, unicode, float]}
+
+            foo = Foo()
+            foo.fixed = [True, u'Hello', 1.0]   # OK
+            foo.fixed = [2, 0, 'Hello', 1]      # Error!
     """
-    def __init__(self, element_types, default=UNDEFINED, **kwargs):
+    def __init__(self, element_types, default=None, **kwargs):
         """See Field.__init__()."""
-        assert all(isinstance(Field, e) for e in element_types)
-        self.element_types = element_types
-        if default is UNDEFINED:
+        self.element_types = map(parse, element_types)
+        self.basic = is_basic(*element_types)
+        if default is None:
             default = [fld.make() for fld in element_types]
         Field.__init__(self, default=default, **kwargs)
 
@@ -215,11 +272,15 @@ class FixedListField(Field):
 
     def collapse(self, value):
         """See Field.collapse()."""
+        if self.basic:
+            return value
         return [self.element_types[i].collapse(elem)
                 for i, elem in enumerate(value)]
 
     def expand(self, value):
         """See Field.expand()."""
+        if self.basic:
+            return value
         return [self.element_types[i].expand(elem)
                 for i, elem in enumerate(value)]
 
@@ -227,19 +288,33 @@ class FixedListField(Field):
     def parse(cls, obj, **kwargs):
         """See Field.parse()."""
         if type(obj) is list and len(obj) > 1:
-            return cls(element_types=map(parse, obj), **kwargs)
+            return cls(element_types=obj, **kwargs)
 
 
 class DictField(Field):
-    """Dict validator. Ensure value type is a dict, and that each element
-    validates using the given element key and value type.
+    """Field containing a dict value. Ensures value type is a dict, and that
+    each element validates using the given element key and value type. Created
+    either by referencing the ``dict`` type:
+
+        ::
+
+            class Foo(Document):
+                structure = {'dict_field': dict}
+
+    Or by specifing a size-1 dict whose key and value represent specific types:
+
+        ::
+
+            class Foo(Document):
+                structure = {'dict_field': {int: str}}
     """
-    DEFAULT_DEFAULT = {}
+    _DEFAULT = {}
 
     def __init__(self, key_type, value_type, **kwargs):
         """See Field.__init__()."""
         self.key_type = parse(key_type)
         self.value_type = parse(value_type)
+        self.basic = is_basic(self.key_type, self.value_type)
         Field.__init__(self, **kwargs)
 
     def __get__(self, obj, klass):
@@ -260,18 +335,14 @@ class DictField(Field):
 
     def collapse(self, dct):
         """See Field.collapse(). Collapse each element in turn."""
-        if self.key_type.collapse == Field.collapse \
-                and self.value_type.collapse == Field.collapse:
-            # Short circuit rebulding entire new dict when not required.
+        if self.basic:
             return value
         return dict((self.key_type.collapse(k), self.value_type.collapse(v))
                     for k, v in dct.iteritems())
 
     def expand(self, value):
         """See Field.expand(). Expand each element in turn."""
-        if self.key_type.collapse == Field.collapse \
-                and self.value_type.collapse == Field.collapse:
-            # Short circuit rebulding entire new dict when not required.
+        if self.basic:
             return value
         return dict((self.key_type.expand(k), self.value_type.expand(v))
                     for k, v in dct.iteritems())
@@ -281,41 +352,54 @@ class DictField(Field):
         """See Field.parse()."""
         if type(obj) is dict:
             if len(obj) == 0:
-                return cls(Field(), Field(), **kwargs)
+                return cls(None, None, **kwargs)
             elif len(obj) == 1:
-                key, value = next(obj.iteritems())
-                return cls(parse(key), parse(value), **kwargs)
+                return cls(*next(obj.iteritems()), **kwargs)
         elif obj == {} or obj is dict:
             # structure = {'foo': {}} or {'foo': dict}
-            return cls(Field(), Field(), **kwargs)
+            return cls(None, None, **kwargs)
 
 
 class ScalarField(Field):
     """A scalar field that must contain a specific set of types.
     """
     def validate(self, value):
-        if not isinstance(value, self.TYPES):
-            allowed = ' or '.join(t.__name__ for t in self.TYPES)
+        if not isinstance(value, self._TYPES):
+            allowed = ' or '.join(t.__name__ for t in self._TYPES)
             actual = '%r (type %s)' % (value, type(value).__name__)
             raise TypeError('value must type %s, not %s' % (allowed, actual))
 
     @classmethod
     def parse(cls, obj, **kwargs):
         """See Field.parse()."""
-        if obj in cls.TYPES:
+        if obj in cls._TYPES:
             return cls(**kwargs)
 
 
 class BoolField(ScalarField):
-    """A boolean value."""
-    TYPES = (bool,)
-    DEFAULT_DEFAULT = False
+    """A boolean value. Created by referencing
+    ``bool``:
+
+        ::
+
+            class Foo(Document):
+                structure = {'bool_field': bool}
+    """
+    _TYPES = (bool,)
+    _DEFAULT = False
 
 
 class BlobField(ScalarField):
-    """A blob (bytes) value."""
-    TYPES = (bytes,) # Alias of str() in Python 2.x
-    DEFAULT_DEFAULT = b''
+    """A BLOB value. Created by referencing the ``str`` or ``bytes``
+    types:
+
+        ::
+
+            class Foo(Document):
+                structure = {'blob_field': str}
+    """
+    _TYPES = (bytes,) # Alias of str() in Python 2.x
+    _DEFAULT = b''
 
     def collapse(self, value):
         """See Field.collapse(). Wrap the bytestring in a bson.Binary()
@@ -328,33 +412,62 @@ class BlobField(ScalarField):
         return str(value)
 
 
-class UnicodeField(ScalarField):
-    """A unicode value.
+class TextField(ScalarField):
+    """A Unicode value. Created by referencing the ``unicode``
+    type:
+
+        ::
+
+            class Foo(Document):
+                structure = {'text_field': unicode}
     """
-    TYPES = (unicode,)
-    DEFAULT_DEFAULT = u''
+    _TYPES = (unicode,)
+    _DEFAULT = u''
 
 
 class DatetimeField(ScalarField):
-    """A field containing a Python datetime.datetime value.
+    """A field containing a Python datetime.datetime value. Created by
+    referencing the ``datetime.datetime`` type:
+
+        ::
+
+            import datetime
+
+            class Foo(Document):
+                structure = {'time': datetime.datetime}
     """
-    DEFAULT_DEFAULT = None
-    TYPES = (datetime.datetime,)
+    _DEFAULT = None
+    _TYPES = (datetime.datetime,)
 
 
 class ObjectIdField(ScalarField):
-    """A scalar field that must contain a BSON ObjectID.
+    """A field that must contain a BSON ObjectID. Created by referencing the
+    ``bson.ObjectId`` type:
+
+        ::
+
+            import bson
+
+            class Foo(Document):
+                structure = {'oid_field': bson.ObjectId}
     """
-    DEFAULT_DEFAULT = None
-    TYPES = (bson.objectid.ObjectId, type(None))
+    _DEFAULT = None
+    _TYPES = (bson.objectid.ObjectId, type(None))
 
 
 class IntField(ScalarField):
-    """A scalar field that must contain an int or long. The value is always
-    coerced to a MongoDB NumberLong, and returned as a long.
+    """A field that must contain an int or long. The value is always coerced to
+    a MongoDB NumberLong, and returned as a long. Created by referencing the
+    ``int`` or ``long`` types:
+
+        ::
+
+            class Foo(Document):
+                structure = {'first_int': int,      # Equivalent
+                             'second_int': long}    # Equivalent
     """
-    DEFAULT_DEFAULT = 0
-    TYPES = (int, long)
+    _DEFAULT = 0
+    _TYPES = (int, long)
 
     #: See Field.collapse(). Unconditionally force all values to be
     #: longs.
@@ -362,21 +475,33 @@ class IntField(ScalarField):
 
 
 class FloatField(ScalarField):
-    """A scalar field that must containing a float.
+    """A field that must containing a float. Created by referencing the
+    ``float`` type:
+
+        ::
+
+            class Foo(Document):
+                structure = {'some_float': flaot}
     """
-    DEFAULT_DEFAULT = 0.0
-    TYPES = (float,)
+    _DEFAULT = 0.0
+    _TYPES = (float,)
 
 
 class DocumentField(Field):
-    """A field containing a sub-document.
+    """A field containing a sub-document. Created by referencing the
+    :py:class:`Document <mongotron.Document>` subclass directly:
+
+        ::
+
+            class Foo(Document):
+                structure = {'subdoc': SubDocumentClass}
     """
-    def __init__(self, doc_type, default=UNDEFINED, **kwargs):
+    def __init__(self, doc_type, default=None, **kwargs):
         """See Field.__init__()."""
-        if default is UNDEFINED:
+        if default is None:
             default = doc_type()
         self.doc_types = doc_type
-        self.TYPES = (doc_type,)
+        self._TYPES = (doc_type,)
         Field.__init__(self, default=default, **kwargs)
 
     def collapse(self, value):
@@ -406,7 +531,7 @@ TYPE_ORDER = [
     DictField,
     BoolField,
     BlobField,
-    UnicodeField,
+    TextField,
     DatetimeField,
     IntField,
     FloatField,
@@ -416,8 +541,8 @@ TYPE_ORDER = [
 
 
 def parse(obj, **kwargs):
-    """Given some mini-language description of a field type, return a Field
-    instance describing that type.
+    """Given some mini-language description of a field type, return a
+    :py:class:`Field` instance describing that type.
 
         `obj`:
             The mini-language object to attempt to parse.

@@ -3,32 +3,13 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to Mongotron's documentation!
-=====================================
-
-Contents:
+Mongotron
+=========
 
 .. currentmodule:: mongotron
 
-.. toctree::
-   :maxdepth: 2
-
-
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
-
-
-
 .. automodule:: mongotron
     :members:
-
-
-
 
 
 10 second tutorial
@@ -143,7 +124,6 @@ that must be set prior to save. Note the list's contents are merged with the
 contents of any base classes.
 
 
-
 Handling of ``None``
 ####################
 
@@ -174,14 +154,27 @@ DocumentMeta class
 .. autoclass:: mongotron.Document.DocumentMeta
 
 
-
 Field class
 ###########
 
+.. currentmodule:: mongotron.field_types
 
-.. autoclass:: mongotron.field_types.Field
+.. autoclass:: Field ()
     :members:
 
 
+Field types
+###########
 
-
+.. autoclass:: BlobField ()
+.. autoclass:: BoolField ()
+.. autoclass:: DatetimeField ()
+.. autoclass:: DictField ()
+.. autoclass:: DocumentField ()
+.. autoclass:: FixedListField ()
+.. autoclass:: FloatField ()
+.. autoclass:: IntField ()
+.. autoclass:: ListField ()
+.. autoclass:: ObjectIdField ()
+.. autoclass:: SetField ()
+.. autoclass:: TextField ()
