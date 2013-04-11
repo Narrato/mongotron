@@ -366,7 +366,6 @@ class Document(object):
 
         col = self._dbcollection
         ops = self.operations
-        LOG.debug('operations: %r', ops)
 
         if new:
             #if this is an insert, generate an ObjectId!
