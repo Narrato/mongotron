@@ -524,5 +524,5 @@ class Document(object):
     def document_as_dict(self):
         """Return a dict representation of the document suitable for encoding
         as BSON."""
-        return dict((self.long_to_short(key), val)
-                    for key, val in self.__attributes.iteritems())
+        return {self.long_to_short(key): val
+                for key, val in self.__attributes.iteritems()}
