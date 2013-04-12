@@ -124,6 +124,13 @@ class Document(object):
     #: Automatically populated by metaclass.
     field_types = {}
 
+    def validate(self):
+        """Hook invoked prior to creating or updating document, but after
+        :py:meth:`pre_save`, :py:meth:`pre_update` or :py:meth:`pre_insert`
+        have run. Expected to raise an exception if the document's structure
+        does not make sense.
+        """
+
     def pre_save(self):
         """Hook invoked prior to creating or updating a document.
         :py:meth:`pre_save` is always invoked before :py:meth:`pre_insert` or
@@ -357,6 +364,7 @@ class Document(object):
             `safe`:
                 Does nothing, yet.
         """
+        self.validate()
         self.pre_save()
         new = self._id is None
 
