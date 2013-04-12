@@ -405,7 +405,6 @@ class Document(object):
         self._dbcollection.remove({'_id':self._id})
         return True
 
-
     @classmethod
     def map_search_list(cls, search_list):
         newlist = []
@@ -434,11 +433,9 @@ class Document(object):
 
         return newdict
 
-
-    # searching and what not
     @classmethod
     def find(cls, *args, **kwargs):
-        """Class method that finds stuff somehow.
+        """Like :py:meth:`Collection.find <pymongo.collection.Collection.find>`
         """
         if 'spec' in kwargs:
             kwargs['spec'] = cls.map_search_dict(kwargs['spec'])
@@ -461,11 +458,12 @@ class Document(object):
 
         return Cursor(cls._dbcollection, document_class=cls, *args, **kwargs)
 
-
-    # you can pass an ObjectId in and it'll auto-search on the _id field!
     @classmethod
     def find_one(cls, spec_or_id=None, *args, **kwargs):
-        """Find a document with the given ObjectID `spec_or_id`.
+        """Find a document with the given ObjectID `spec_or_id`. You can pass
+        an ObjectId in and it'll auto-search on the _id field.
+
+        Like :py:meth:`Collection.find_one <pymongo.collection.Collection.find_one>`
         """
         if 'spec' in kwargs:
             kwargs['spec'] = cls.map_search_dict(kwargs['spec'])
@@ -484,19 +482,23 @@ class Document(object):
             return result
         return None
 
-    #TODO: implement update
     @classmethod
-    def update(cls, spec, document, **kwargs):
+    def update(cls, spec, update, **kwargs):
+        """Modify existing documents matching `spec` using the operations from
+        `update`.
+
+        Like :py:meth:`Collection.update <pymongo.collection.Collection.update>`
+        """
+        #TODO: implement update
         return cls._dbcollection.update(spec, document, **kwargs)
 
-
-
-    # get a document by a specific id
-    # this is mapped to the _id field
-    # you can pass a string or an ObjectId
     @classmethod
     def get_by_id(cls, oid):
-        #convert id to ObjectId
+        """
+        Get a document by a specific ID. This is mapped to the _id field. You
+        can pass a string or an ObjectId.
+        """
+        # Convert id to ObjectId
         if isinstance(oid, basestring):
             try:
                 oid = ObjectId(oid)
@@ -506,7 +508,6 @@ class Document(object):
             raise ValueError('oid should be an ObjectId or string')
 
         return cls.find_one({'_id':oid})
-
 
     def to_json_dict(self, **kwargs):
         '''
