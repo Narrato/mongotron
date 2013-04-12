@@ -402,7 +402,7 @@ class Document(object):
         """
         # TODO: parse returned ack dict to ensure a deletion occurred.
         assert self._id, 'Cannot delete unsaved Document'
-        self._dbcollection.remove({'_id':self['_id']})
+        self._dbcollection.remove({'_id':self._id})
         return True
 
 
