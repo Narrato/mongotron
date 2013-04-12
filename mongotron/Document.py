@@ -267,10 +267,10 @@ class Document(object):
     @property
     def operations(self):
         # construct the $set changes
-        fields = dict((self.long_to_short(key), self.__attributes[key])
-                       for key in self.__dirty_fields)
-        #merge the operations and the set of changes
-        return dict(self.__ops, **{'$set': fields})
+        ops = self.__ops.copy()
+        ops['$set'] = {self.long_to_short(key): self.__attributes[key]
+                       for key in self.__dirty_fields}
+        return ops
 
 
     def clear_ops(self):
