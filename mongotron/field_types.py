@@ -508,6 +508,13 @@ class DocumentField(Field):
         self._TYPES = (doc_type,)
         Field.__init__(self, default=default, **kwargs)
 
+    def validate(self, value):
+        """See Field.validate(). Adds type checking and sub-document
+        validation."""
+        if not isinstance(value, self.doc_type):
+            raise ValueError('value must be a %r.' % (self.doc_type,))
+        value.validate()
+
     def collapse(self, value):
         """Return the document value as a dictionary."""
         return value.document_as_dict()
