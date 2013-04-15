@@ -55,7 +55,9 @@ class DocumentMeta(type):
         # print '----------------------------------------'
         # pprint(attrs)
         # print '----------------------------------------'
-        return type.__new__(cls, name, bases, attrs)
+        new = type.__new__(cls, name, bases, attrs)
+        new.init_class()
+        return new
 
     @classmethod
     def merge_carefully(cls, base, dname, attrs):
@@ -124,12 +126,27 @@ class Document(object):
     #: Automatically populated by metaclass.
     field_types = {}
 
+    @classmethod
+    def init_class(cls):
+        """Invoked by the metaclass immediately after constructing the class to
+        permit extra initialization. Must be overridden with another
+        @classmethod.
+        """
+        # This necessity of this hook is fundamentally broken, and it should
+        # likely be removed again.
+
     def validate(self):
         """Hook invoked prior to creating or updating document, but after
         :py:meth:`pre_save`, :py:meth:`pre_update` or :py:meth:`pre_insert`
         have run. Expected to raise an exception if the document's structure
         does not make sense.
+
+        The base implementation must be called in order to handle
+        :py:attr:`Document.required` processing.
         """
+        missing = self.required.difference(self.__attributes)
+        if missing:
+            raise TypeError('missing required fields: ' + ', '.join(missing))
 
     def pre_save(self):
         """Hook invoked prior to creating or updating a document.
@@ -184,17 +201,22 @@ class Document(object):
         `short_key` if no canonical version exists."""
         return cls.inverse_field_map.get(short_key, short_key)
 
-    def load_dict(self, doc):
+    def merge_dict(self, dct):
+        """Load keys and collapsed values from `dct`.
+        """
+        for key, field in self.field_types.iteritems():
+            short = self.long_to_short(key)
+            if short in dct:
+                self.__attributes[key] = dct[short]
+            elif key in self.default_values:
+                self.set(key, field.make())
+
+    def load_dict(self, dct):
         """Reset the document to an empty state, then load keys and values from
         the dictionary `doc`."""
         self.clear_ops()
         self.__attributes = {}
-        for key, field in self.field_types.iteritems():
-            short = self.long_to_short(key)
-            if short in doc:
-                self.__attributes[key] = doc[short]
-            elif key in self.default_values:
-                self.set(key, field.make())
+        self.merge_dict(dct)
 
     def __init__(self, doc=None):
         self.load_dict(doc or {})
@@ -364,24 +386,18 @@ class Document(object):
             `safe`:
                 Does nothing, yet.
         """
-        self.validate()
         self.pre_save()
-        new = self._id is None
 
         # NOTE: called BEFORE we get self.operations to allow the pre_
         # functions to add to the set of operations. (i.e. set last modified
         # fields etc)
+        new = self._id is None
         if new:
             self.pre_insert()
         else:
             self.pre_update()
 
-        # We execute the REQUIRED stuff AFTER the pre_save/insert/update as
-        # those functions may well fill in the missing required fields!
-        missing = self.required.difference(self.__attributes)
-        if missing:
-            raise TypeError('missing required fields: ' + ', '.join(missing))
-
+        self.validate()
         col = self._dbcollection
         ops = self.operations
 
