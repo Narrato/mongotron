@@ -6,9 +6,9 @@ from collections import OrderedDict
 
 from bson.objectid import ObjectId, InvalidId
 
-from mongotron.ConnectionManager import GetConnectionManager
-from mongotron.Cursor import Cursor
-from mongotron import field_types
+from .ConnectionManager import GetConnectionManager
+from .Cursor import Cursor
+from . import field_types
 
 LOG = logging.getLogger('mongotron.Document')
 
@@ -33,18 +33,24 @@ class DocumentMeta(type):
     After this is done, it synthesizes a new :py:attr:`Document.field_types`
     mapping using :py:class:`mongotron.field_types.Field` Field instances.
     """
-    def __new__(cls, name, bases, attrs):
-        required = set(attrs.get('required', []))
+    INHERITED_DICTS = ['structure', 'default_values', 'field_map']
+    INHERITED_SETS = ['required', 'write_once']
 
+    def __new__(cls, name, bases, attrs):
         for base in bases:
             parent = base.__mro__[0]
-            for dname in 'structure', 'default_values', 'field_map':
+            for dname in cls.INHERITED_DICTS:
                 cls.merge_carefully(parent, dname, attrs)
-            required.update(getattr(parent, 'required', []))
+
+        for sname in cls.INHERITED_SETS:
+            val = set()
+            val.update(attrs.get(sname, []))
+            for base in bases:
+                val.update(vars(base.__mro__[0]).get(sname, []))
+            attrs[sname] = val
 
         it = attrs['field_map'].iteritems()
         attrs['inverse_field_map'] = dict((k, v) for k, v in it)
-        attrs['required'] = required
         attrs['field_types'] = cls.make_field_types(attrs)
         attrs['__collection__'] = cls.make_collection_name(name, attrs)
         attrs.setdefault('__manager__', GetConnectionManager())
@@ -85,10 +91,11 @@ class DocumentMeta(type):
         """
         types = {}
         for name, desc in attrs['structure'].iteritems():
-            default = attrs['default_values'].get(name)
-            required = name in attrs.get('required', [])
-            types[name] = field_types.parse(desc, required=required,
-                                            default=default, name=name)
+            types[name] = field_types.parse(desc,
+                required=name in attrs['required'],
+                default=attrs['default_values'].get(name),
+                name=name,
+                write_once=name in attrs['write_once'])
         return types
 
 
@@ -110,6 +117,10 @@ class Document(object):
     #: List of canonical field names that absolutely must be set prior to save.
     #: Automatically populated by metaclass.
     required = []
+
+    #: List of canonical field names that cannot be overwritten once they have
+    #: been set.
+    write_once = []
 
     #: Map of canonical field names to their default values.
     default_values = {}
@@ -532,19 +543,6 @@ class Document(object):
             raise ValueError('oid should be an ObjectId or string')
 
         return cls.find_one({'_id':oid})
-
-    def to_json_dict(self, **kwargs):
-        '''
-        this is so an API can export the document as a JSON dict
-        override this in your class call the super class
-        ret = super(Class, self).to_json_dict(full_export)
-        ret['yourthing']=self.thing
-        lets you hide specific variables that dont need to be exported
-        '''
-        return OrderedDict()
-
-    def from_json_dict(self, json_dict):
-        return OrderedDict()
 
     def document_as_dict(self):
         """Return a dict representation of the document suitable for encoding

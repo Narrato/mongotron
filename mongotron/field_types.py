@@ -9,8 +9,9 @@ import datetime
 import bson
 import bson.objectid
 
-from mongotron.ChangeTrackingDict import ChangeTrackingDict
-from mongotron.ChangeTrackingList import ChangeTrackingList
+from .exceptions import ValidationError
+from .ChangeTrackingDict import ChangeTrackingDict
+from .ChangeTrackingList import ChangeTrackingList
 
 
 def is_basic(*fields):
@@ -50,7 +51,7 @@ class Field(object):
     _DEFAULT = None
 
     def __init__(self, name=None, required=False, default=None,
-                 doc=None, readonly=False):
+                 doc=None, readonly=False, write_once=False):
         """Create an instance.
         """
         self.name = name
@@ -58,6 +59,7 @@ class Field(object):
         if doc is not None:
             self.__doc__ = doc
         self.readonly = readonly
+        self.write_once = write_once
         if default is None:
             default = self._DEFAULT
         if callable(default):
@@ -90,12 +92,13 @@ class Field(object):
         expanded `value` and saving it to the associated key of `obj`.
         """
         if self.readonly:
-            raise AttributeError('%r attribute is read-only' % (self.name,))
+            raise AttributeError('%r is read-only' % (self.name,))
+        if self.write_once and self.name in obj:
+            raise ValidationError('%r is write-once' % (self.name,))
         if value is None:
-            obj.unset(self.name)
-        else:
-            self.validate(value)
-            obj.set(self.name, self.collapse(value))
+            return obj.unset(self.name)
+        self.validate(value)
+        obj.set(self.name, self.collapse(value))
 
     def validate(self, value):
         """Raise an exception if `value` is not a suitable value for this
