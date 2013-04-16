@@ -92,7 +92,7 @@ class Field(object):
         expanded `value` and saving it to the associated key of `obj`.
         """
         if self.readonly:
-            raise AttributeError('%r is read-only' % (self.name,))
+            raise ValidationError('%r is read-only' % (self.name,))
         if self.write_once and self.name in obj:
             raise ValidationError('%r is write-once' % (self.name,))
         if value is None:
@@ -465,13 +465,13 @@ class ObjectIdField(ScalarField):
 class IntField(ScalarField):
     """A field that must contain an int or long. The value is always coerced to
     a MongoDB NumberLong, and returned as a long. Created by referencing the
-    ``int`` or ``long`` types:
+    ``int`` or ``long`` types. The following are equivalent:
 
         ::
 
             class Foo(Document):
-                structure = {'first_int': int,      # Equivalent
-                             'second_int': long}    # Equivalent
+                structure = {'first_int': int,
+                             'second_int': long}
     """
     _DEFAULT = 0
     _TYPES = (int, long)
@@ -535,6 +535,51 @@ class DocumentField(Field):
             return cls(obj, **kwargs)
 
 
+class ReferenceField(ScalarField):
+    """A field that appears to be an object, while actually stored as some
+    reconstructable reference to that object.
+
+        `ref_type`:
+            Mini-language representation of the type of the reference
+            value.
+
+        `obj_type`:
+            Mini-language representation of the type of the value itself.
+
+        `make_ref`:
+            Function that when passed an `obj_type`-valued object, returns
+            a `ref_type`-valued object.
+
+        `make_obj`:
+            Function that when passed a `ref_type`-valued object, returns a
+            `obj_type`-valued object.
+    """
+    def __init__(self, ref_type, obj_type, make_ref, make_obj, **kwargs):
+        """See Field.__init__()."""
+        self.ref_type = parse(ref_type)
+        self.obj_type = parse(obj_type)
+        self.make_ref = make_ref
+        self.make_obj = make_obj
+        self._TYPES = (obj_type,)
+        Field.__init__(self, **kwargs)
+
+    def validate(self, value):
+        """See Field.validate(). Pass validation through to the actual field
+        type."""
+        self.obj_type.validate(value)
+
+    def collapse(self, value):
+        """See Field.collapse(). Make the reference, and collapse it using its
+        associated type."""
+        return self.ref_type.collapse(self.make_ref(value))
+
+    def expand(self, value):
+        """See Field.expand(). Call the factory and expand its result.
+        """
+        ref = self.ref_type.expand(value)
+        return self.make_obj(ref)
+
+
 #: List of Field classes in the order in which parsing should be attempted.
 #: Currently parsing is unambiguous, but this might not always be true.
 TYPE_ORDER = [
@@ -550,7 +595,8 @@ TYPE_ORDER = [
     IntField,
     FloatField,
     ObjectIdField,
-    DocumentField
+    DocumentField,
+    ReferenceField
 ]
 
 
