@@ -257,7 +257,7 @@ class FixedListField(Field):
         self.element_types = map(parse, element_types)
         self.basic = is_basic(*element_types)
         if default is None:
-            default = [fld.make() for fld in element_types]
+            default = [fld.make() for fld in self.element_types]
         Field.__init__(self, default=default, **kwargs)
 
     #: Borrow ListField's __get__ method.
