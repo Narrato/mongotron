@@ -1,3 +1,5 @@
+
+from __future__ import absolute_import
 from pymongo.cursor import Cursor as PymongoCursor
 
 class Cursor(PymongoCursor):

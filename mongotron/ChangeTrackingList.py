@@ -1,5 +1,6 @@
 #from MongoEngine
 
+from __future__ import absolute_import
 import weakref
 
 #TODO: implement this so it actually does the right thing I think

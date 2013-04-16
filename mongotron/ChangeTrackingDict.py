@@ -1,5 +1,6 @@
 #from MongoEngine
 
+from __future__ import absolute_import
 import weakref
 
 class ChangeTrackingDict(dict):

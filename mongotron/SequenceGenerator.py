@@ -1,4 +1,6 @@
-from ConnectionManager import GetConnectionManager
+
+from __future__ import absolute_import
+from .ConnectionManager import GetConnectionManager
 
 class SequenceGenerator(object):
     
