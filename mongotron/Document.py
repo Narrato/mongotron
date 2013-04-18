@@ -61,9 +61,7 @@ class DocumentMeta(type):
         # print '----------------------------------------'
         # pprint(attrs)
         # print '----------------------------------------'
-        new = type.__new__(cls, name, bases, attrs)
-        new.init_class()
-        return new
+        return type.__new__(cls, name, bases, attrs)
 
     @classmethod
     def merge_carefully(cls, base, dname, attrs):
@@ -137,15 +135,6 @@ class Document(object):
     #: Automatically populated by metaclass.
     field_types = {}
 
-    @classmethod
-    def init_class(cls):
-        """Invoked by the metaclass immediately after constructing the class to
-        permit extra initialization. Must be overridden with another
-        @classmethod.
-        """
-        # This necessity of this hook is fundamentally broken, and it should
-        # likely be removed again.
-
     def validate(self):
         """Hook invoked prior to creating or updating document, but after
         :py:meth:`pre_save`, :py:meth:`pre_update` or :py:meth:`pre_insert`
@@ -157,7 +146,8 @@ class Document(object):
         """
         missing = self.required.difference(self.__attributes)
         if missing:
-            raise TypeError('missing required fields: ' + ', '.join(missing))
+            raise ValidationError('missing required fields: %s' %\
+                                  (', '.join(missing),))
 
     def pre_save(self):
         """Hook invoked prior to creating or updating a document.
