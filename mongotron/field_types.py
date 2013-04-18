@@ -28,6 +28,13 @@ def is_basic(*fields):
     return True
 
 
+def type_name(o):
+    s = getattr(o, '__name__', None)
+    if not s:
+        s = o.__class__.__name__
+    return s.split('.')[-1]
+
+
 class Field(object):
     """Default field type, does no validation, accepts anything. Created by
     passing ``None`` as the field type:
@@ -177,7 +184,8 @@ class ListField(Field):
     def validate(self, value):
         """See Field.validate()."""
         if not isinstance(value, self.CONTAINER_TYPE):
-            raise ValueError('value must be a %r.' % (self.CONTAINER_TYPE,))
+            raise ValidationError('value must be a %r.' %\
+                                  (type_name(self.CONTAINER_TYPE),))
         for elem in value:
             self.element_type.validate(elem)
 
@@ -264,15 +272,17 @@ class FixedListField(Field):
         Field.__init__(self, default=default, **kwargs)
 
     #: Borrow ListField's __get__ method.
-    __get__ = ListField.__get__
+    __get__ = ListField.__get__.im_func
 
     def validate(self, value):
         """See Field.validate()."""
         if type(value) is not list:
-            raise ValueError('value must be a %r.' % (list,))
+            raise ValidationError('value must be a %r.' %\
+                                 (type_name(list),))
         expect_len = len(self.element_types)
         if len(value) != expect_len:
-            raise ValueError('value must contain %d elements.' % expect_len)
+            raise ValidationError('value must contain %d elements.' %\
+                                  expect_len)
         for idx, elem in enumerate(value):
             self.element_types[idx].validate(elem)
 
@@ -333,8 +343,8 @@ class DictField(Field):
 
     def validate(self, dct):
         """See Field.validate()."""
-        if not isinstance(value, dict):
-            raise ValueError('value must be a %r.' % (dict,))
+        if not isinstance(dct, dict):
+            raise ValidationError('value must be a %r.' % (type_name(dict),))
         for key, value in dct.iteritems():
             self.key_type.validate(key)
             self.value_type.validate(value)
@@ -342,7 +352,7 @@ class DictField(Field):
     def collapse(self, dct):
         """See Field.collapse(). Collapse each element in turn."""
         if self.basic:
-            return value
+            return dct
         return dict((self.key_type.collapse(k), self.value_type.collapse(v))
                     for k, v in dct.iteritems())
 
@@ -373,8 +383,8 @@ class ScalarField(Field):
         if not isinstance(value, self._TYPES):
             allowed = ' or '.join(t.__name__ for t in self._TYPES)
             actual = '%s (%r)' % (type(value).__name__, value)
-            raise TypeError('field %s: value must %s, not %s' %\
-                (self.name, allowed, actual))
+            raise ValidationError('%s: value must %s, not %s' %\
+                                  (self.name, allowed, actual))
 
     @classmethod
     def parse(cls, obj, **kwargs):
@@ -416,6 +426,9 @@ class BlobField(ScalarField):
     def expand(self, value):
         """See Field.expand(). Unwrap the bson.Binary() instance into a
         bytestring."""
+        if not isinstance(value, (bson.Binary, str)):
+            raise ValidationError('%r must be a BLOB, got %r' %\
+                                  (self.name, value))
         return str(value)
 
 
@@ -515,7 +528,8 @@ class DocumentField(Field):
         """See Field.validate(). Adds type checking and sub-document
         validation."""
         if not isinstance(value, self.doc_type):
-            raise ValueError('value must be a %r.' % (self.doc_type,))
+            raise ValidationError('value must be a %r.' %\
+                                  (type_name(self.doc_type),))
         value.validate()
 
     def collapse(self, value):
@@ -524,6 +538,9 @@ class DocumentField(Field):
 
     def expand(self, value):
         """Produce a Document instance from the dict `value`."""
+        if not isinstance(value, dict):
+            raise ValidationError('%r must be a dict, got %r' %\
+                                  (self.name, value))
         return self.doc_type(doc=value)
 
     @classmethod
