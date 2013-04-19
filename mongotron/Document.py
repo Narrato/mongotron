@@ -219,6 +219,12 @@ class Document(object):
         self.__attributes = {}
         self.merge_dict(dct)
 
+    def to_json_dict(self, **kwargs):
+        return OrderedDict()
+
+    def from_json_dict(self, json_dict):
+        pass
+
     def __init__(self, doc=None):
         self.load_dict(doc or {})
 
