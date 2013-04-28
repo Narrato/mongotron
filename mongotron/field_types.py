@@ -12,6 +12,7 @@ import bson.objectid
 from .exceptions import ValidationError
 from .ChangeTrackingDict import ChangeTrackingDict
 from .ChangeTrackingList import ChangeTrackingList
+from .ChangeTrackingSet import ChangeTrackingSet
 
 
 def is_basic(*fields):
@@ -173,19 +174,24 @@ class ListField(Field):
         self.basic = is_basic(element_type)
         Field.__init__(self, **kwargs)
 
+    def wrap(self, value, obj):
+        """Return a wrapped version of `value`, that somehow tracks changes to
+        the container."""
+        return ChangeTrackingList(value, obj, self.name)
+
     def __get__(self, obj, klass):
         """See Field.__get__. Returns a :py:class:`ChangeTrackingList` that
         generates semantic actions based on user modifications."""
         if obj is None:
             return self
         value = Field.__get__(self, obj, klass)
-        return ChangeTrackingList(value or self.make(), obj, self.name)
+        return self.wrap(value or self.make(), obj)
 
     def validate(self, value):
         """See Field.validate()."""
         if not isinstance(value, self.CONTAINER_TYPE):
-            raise ValidationError('value must be a %r.' %\
-                                  (type_name(self.CONTAINER_TYPE),))
+            raise ValidationError('value must be a %r, got %r.' %\
+                                  (type_name(self.CONTAINER_TYPE), value))
         for elem in value:
             self.element_type.validate(elem)
 
@@ -239,6 +245,10 @@ class SetField(ListField):
     CONTAINER_TYPE = set
     EMPTY_VALUE = set()
 
+    def wrap(self, value, obj):
+        """See ListField.wrap()"""
+        return ChangeTrackingSet(value, obj, self)
+
     def collapse(self, value):
         """See Field.collapse(). Collapse each element and return a list."""
         return map(self.element_type.collapse, value)
@@ -270,6 +280,11 @@ class FixedListField(Field):
         if default is None:
             default = [fld.make() for fld in self.element_types]
         Field.__init__(self, default=default, **kwargs)
+
+    def wrap(self, value, obj):
+        """Return a wrapped version of `value`, that somehow tracks changes to
+        the container."""
+        return ChangeTrackingList(value, obj, self.name)
 
     #: Borrow ListField's __get__ method.
     __get__ = ListField.__get__.im_func
