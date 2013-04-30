@@ -456,7 +456,9 @@ class TextField(ScalarField):
             class Foo(Document):
                 structure = {'text_field': unicode}
     """
-    _TYPES = (unicode,)
+    # TODO: this is completely totally and utterly wrong, find a better
+    # solution later.
+    _TYPES = (basestring, unicode)
     _DEFAULT = u''
 
 
