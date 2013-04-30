@@ -6,6 +6,7 @@ from collections import OrderedDict
 
 from bson.objectid import ObjectId, InvalidId
 
+from .exceptions import ValidationError
 from .ConnectionManager import GetConnectionManager
 from .Cursor import Cursor
 from . import field_types
