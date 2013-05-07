@@ -60,7 +60,7 @@ setup(
 	],
 	packages = find_packages(),
 
-	zip_safe = True,
+	zip_safe = False,
 
 	install_requires = [
 		'pymongo>=2.4.1',
