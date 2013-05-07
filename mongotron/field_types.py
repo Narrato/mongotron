@@ -186,7 +186,8 @@ class ListField(Field):
         if obj is None:
             return self
         value = Field.__get__(self, obj, klass)
-        return self.wrap(value or self.make(), obj)
+        if value is not None:
+            return self.wrap(value or self.make(), obj)
 
     def validate(self, value):
         """See Field.validate()."""
@@ -278,8 +279,6 @@ class FixedListField(Field):
         """See Field.__init__()."""
         self.element_types = map(parse, element_types)
         self.basic = is_basic(*element_types)
-        if default is None:
-            default = [fld.make() for fld in self.element_types]
         Field.__init__(self, default=default, **kwargs)
 
     def wrap(self, value, obj):
@@ -350,7 +349,7 @@ class DictField(Field):
         Field.__init__(self, **kwargs)
 
     def __get__(self, obj, klass):
-        """See Field.__get__. Returns a :py:class:`ChangeTrackingList` that
+        """See Field.__get__. Returns a :py:class:`ChangeTrackingDict` that
         generates semantic actions based on user modifications."""
         if obj is None:
             return self
