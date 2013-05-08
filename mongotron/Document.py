@@ -386,6 +386,15 @@ class Document(object):
         """
         self.add_operation('$pushAll', key, value)
 
+    def identity(self):
+        """Return a MongoDB query that matches this document. Needed to
+        correctly form findAndModify command in a sharded environment (i.e. you
+        must override this and have it return a query that matches all fields
+        in the assocated collection's shardkey.
+
+        Base implementation simply returns _id or a new ObjectId.
+        """
+        return {'_id': self._id or ObjectId()}
 
     def save(self, safe=True):
         """Insert the document into the underlying collection if it is unsaved,
@@ -409,20 +418,14 @@ class Document(object):
         col = self._dbcollection
         ops = self.operations
 
-        if new:
-            #if this is an insert, generate an ObjectId!
-            if ops:
-                res = col.find_and_modify(query={'_id':ObjectId()}, update=ops,
-                                          upsert=True, new=True)
-                self.load_dict(res)
+        if ops:
+            res = col.find_and_modify(query=self.identity(),
+                                      update=ops, upsert=True, new=True)
+            self.load_dict(res)
 
+        if new:
             self.post_insert()
         else:
-            if ops:
-                res = col.find_and_modify(query={'_id':self.__attributes['_id']},
-                                          update=ops, upsert=True, new=True)
-                self.load_dict(res)
-
             self.post_update()
 
         self.clear_ops()
