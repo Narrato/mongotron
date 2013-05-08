@@ -219,6 +219,7 @@ class Document(object):
         self.clear_ops()
         self.__attributes = {}
         self.merge_dict(dct)
+        self.__identity = self.identity()
 
     def to_json_dict(self, **kwargs):
         return OrderedDict()
@@ -419,7 +420,7 @@ class Document(object):
         ops = self.operations
 
         if ops:
-            res = col.find_and_modify(query=self.identity(),
+            res = col.find_and_modify(query=self.__identity,
                                       update=ops, upsert=True, new=True)
             self.load_dict(res)
 
