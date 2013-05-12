@@ -149,6 +149,13 @@ class Document(object):
         if missing:
             raise ValidationError('missing required fields: %s' %\
                                   (', '.join(missing),))
+                                  
+    def on_load(self):
+        """Hook invoked while document is being initialized.
+        :py:meth:`on_load` is only called if the Document is being loaded
+        from mongo (i.e. is it being initialized with Data) Override in your
+        subclass as desired, but remember to call super()
+        """
 
     def pre_save(self):
         """Hook invoked prior to creating or updating a document.
@@ -229,6 +236,8 @@ class Document(object):
 
     def __init__(self, doc=None):
         self.load_dict(doc or {})
+        if doc:
+            self.on_load()
 
     def __setattr__(self, name, value):
         """Nasty guard to prevent object writes for nonexistent attributes. It
