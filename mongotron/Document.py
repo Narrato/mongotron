@@ -347,6 +347,10 @@ class Document(object):
             return self.unset(key)
         self.__dirty_fields.add(key)
         self.__attributes[key] = value
+        # Everything about this is stupid. Needs general solution, see bug #1
+        short = self.long_to_short(key)
+        for op, fields in self.__ops.iteritems():
+            fields.pop(short, None)
 
     def unset(self, key):
         """Unconditionally remove the underlying document field `key`.
