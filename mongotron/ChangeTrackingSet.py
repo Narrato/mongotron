@@ -17,6 +17,9 @@ class ChangeTrackingSet(set):
         self._field = field
         return super(ChangeTrackingSet, self).__init__(items)
 
+    def __getstate__(self):
+        raise TypeError('ChangeTrackingSet cannot be pickled')
+
     def _set(self):
         """Arrange for the parent object to notice the value of the set has
         changed."""

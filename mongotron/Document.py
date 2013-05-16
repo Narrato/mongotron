@@ -149,7 +149,7 @@ class Document(object):
         if missing:
             raise ValidationError('missing required fields: %s' %\
                                   (', '.join(missing),))
-                                  
+
     def on_load(self):
         """Hook invoked while document is being initialized.
         :py:meth:`on_load` is only called if the Document is being loaded
@@ -532,7 +532,7 @@ class Document(object):
         return None
 
     @classmethod
-    def update(cls, spec, update, **kwargs):
+    def update(cls, spec, document, **kwargs):
         """Modify existing documents matching `spec` using the operations from
         `update`.
 
