@@ -50,8 +50,7 @@ class DocumentMeta(type):
                 val.update(vars(base.__mro__[0]).get(sname, []))
             attrs[sname] = val
 
-        it = attrs['field_map'].iteritems()
-        attrs['inverse_field_map'] = dict((k, v) for k, v in it)
+        cls.make_inverse_map(attrs)
         attrs['field_types'] = cls.make_field_types(attrs)
         attrs['__collection__'] = cls.make_collection_name(name, attrs)
         attrs.setdefault('__manager__', GetConnectionManager())
@@ -63,6 +62,18 @@ class DocumentMeta(type):
         # pprint(attrs)
         # print '----------------------------------------'
         return type.__new__(cls, name, bases, attrs)
+
+    @classmethod
+    def make_inverse_map(cls, attrs):
+        attrs['inverse_field_map'] = dct = {}
+        for canon, short in attrs['field_map'].iteritems():
+            if short in dct:
+                raise TypeError('duplicate short key %r for field %r '
+                                '(already used for field %r)' %\
+                                (short, canon, dct[short]))
+            dct[short] = canon
+        it = attrs['field_map'].iteritems()
+        attrs['inverse_field_map'] = dict((k, v) for k, v in it)
 
     @classmethod
     def merge_carefully(cls, base, dname, attrs):
