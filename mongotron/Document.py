@@ -255,7 +255,7 @@ class Document(object):
         should be possible to replace this with the ``__slots__`` mechanism,
         but there is some apparent incompatibility with using metaclasses and
         weakrefs simultaneously."""
-        if name.startswith('_Document__'):
+        if name.startswith('_'):
             vars(self)[name] = value
         else:
             getattr(self.__class__, name).__set__(self, value)
