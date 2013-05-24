@@ -14,8 +14,8 @@ def make_wrapper(func):
 
 def wrap_type(name, base, mutators):
     """Given some built-in collection type, wrap all its mutator methods in a
-    subclass such that its owner document is notification when the collection
-    is modified.
+    subclass such that its owner document is notified when the collection
+    has changed.
     """
     def _set(self):
         """Arrange for the parent to notice the container has changed."""
