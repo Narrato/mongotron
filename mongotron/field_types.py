@@ -11,9 +11,9 @@ import bson
 import bson.objectid
 
 from .exceptions import ValidationError
-from .ChangeTrackingDict import ChangeTrackingDict
-from .ChangeTrackingList import ChangeTrackingList
-from .ChangeTrackingSet import ChangeTrackingSet
+from .wrapped_types import ChangeTrackingDict
+from .wrapped_types import ChangeTrackingList
+from .wrapped_types import ChangeTrackingSet
 
 
 def is_basic(*fields):
