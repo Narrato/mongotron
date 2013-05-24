@@ -5,7 +5,7 @@ import functools
 def make_wrapper(func):
     def wrapper(self, *args, **kwargs):
         ret = func(*args, **kwargs)
-        self._mark_as_changed()
+        self._set()
         return ret
 
     wrapper.func_name = func.__name__
