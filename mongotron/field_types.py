@@ -178,7 +178,7 @@ class ListField(Field):
     def wrap(self, value, obj):
         """Return a wrapped version of `value`, that somehow tracks changes to
         the container."""
-        return ChangeTrackingList(value, obj, self.name)
+        return ChangeTrackingList(value, obj, self)
 
     def __get__(self, obj, klass):
         """See Field.__get__. Returns a :py:class:`ChangeTrackingList` that
@@ -284,7 +284,7 @@ class FixedListField(Field):
     def wrap(self, value, obj):
         """Return a wrapped version of `value`, that somehow tracks changes to
         the container."""
-        return ChangeTrackingList(value, obj, self.name)
+        return ChangeTrackingList(value, obj, self)
 
     #: Borrow ListField's __get__ method.
     __get__ = ListField.__get__.im_func
@@ -354,7 +354,7 @@ class DictField(Field):
         if obj is None:
             return self
         value = Field.__get__(self, obj, klass)
-        return ChangeTrackingDict(value or self.make(), obj, self.name)
+        return ChangeTrackingDict(value or self.make(), obj, self)
 
     def validate(self, dct):
         """See Field.validate()."""

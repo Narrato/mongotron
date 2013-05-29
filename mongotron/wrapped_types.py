@@ -4,7 +4,7 @@ import functools
 
 def make_wrapper(func):
     def wrapper(self, *args, **kwargs):
-        ret = func(*args, **kwargs)
+        ret = func(self, *args, **kwargs)
         self._set()
         return ret
 
