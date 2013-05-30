@@ -304,6 +304,8 @@ class Document(object):
         op_dict = self.__ops.setdefault(op, {})
         if op == '$set':
             raise ValueError('$set is an invalid operation!')
+        elif op == '$inc' or op == '$dec':
+            op_dict[key] = val
         elif op == '$addToSet':
             # $addToSet gets special handling because we use the $each version
             if not key in op_dict:
