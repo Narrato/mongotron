@@ -169,6 +169,7 @@ Field types
 .. autoclass:: BlobField ()
 .. autoclass:: BoolField ()
 .. autoclass:: DatetimeField ()
+.. autoclass:: SafeDictField ()
 .. autoclass:: DictField ()
 .. autoclass:: DocumentField ()
 .. autoclass:: FixedListField ()
