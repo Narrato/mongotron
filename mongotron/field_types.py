@@ -445,6 +445,7 @@ class SafeDictField(DictField):
         """See Field.parse()."""
         if type(obj) is dict:
             if obj.get('safe') is True:
+                obj = obj.copy()
                 obj.pop('safe')
                 return super(SafeDictField, cls).parse(obj, **kwargs)
 
