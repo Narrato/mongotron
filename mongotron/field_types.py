@@ -391,6 +391,64 @@ class DictField(Field):
             return cls(None, None, **kwargs)
 
 
+class SafeDictField(DictField):
+    """A version of DictField that ensures MongoDB reserved operators are
+    escaped using their Unicode long form.
+
+    See
+    http://docs.mongodb.org/manual/faq/developers/#dollar-sign-operator-escaping
+
+    ::
+
+        class MyDoc(Document):
+            structure = {
+                # Accept any element type.
+                'field': {'safe': True}
+
+                # Accept particular element types.
+                'field': {str: int, 'safe': True}
+            }
+    """
+    @classmethod
+    def _visit(cls, obj, fn):
+        if isinstance(obj, list):
+            return [cls._visit(e, fn) for e in obj]
+        elif isinstance(obj, dict):
+            return {fn(k): cls._visit(v, fn) for k, v in obj.iteritems()}
+        return obj
+
+    SUB_MAP = {ord('.'): 0xff04, ord('$'): 0xff0e}
+    RSUB_MAP = {v: k for k, v in SUB_MAP.iteritems()}
+
+    @classmethod
+    def _wrap(cls, k):
+        if isinstance(k, basestring):
+            k = unicode(k).translate(cls.SUB_MAP)
+        return k
+
+    @classmethod
+    def _unwrap(cls, k):
+        if isinstance(k, basestring):
+            k = unicode(k).translate(cls.RSUB_MAP)
+        return k
+
+    def collapse(self, v):
+        v = super(SafeDictField, self).collapse(v)
+        return self._visit(v, self._wrap)
+
+    def expand(self, v):
+        v = self._visit(v, self._unwrap)
+        return super(SafeDictField, self).expand(v)
+
+    @classmethod
+    def parse(cls, obj, **kwargs):
+        """See Field.parse()."""
+        if type(obj) is dict:
+            if obj.get('safe') is True:
+                obj.pop('safe')
+                return super(SafeDictField, cls).parse(obj, **kwargs)
+
+
 class ScalarField(Field):
     """A scalar field that must contain a specific set of types.
     """
@@ -581,6 +639,7 @@ TYPE_ORDER = [
     ListField,
     SetField,
     FixedListField,
+    SafeDictField,
     DictField,
     BoolField,
     BlobField,
