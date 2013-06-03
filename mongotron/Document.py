@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 
 import logging
+import warnings
 from collections import OrderedDict
 
 from bson.objectid import ObjectId, InvalidId
@@ -50,6 +51,7 @@ class DocumentMeta(type):
                 val.update(vars(base.__mro__[0]).get(sname, []))
             attrs[sname] = val
 
+        cls.check_field_map(name, attrs)
         cls.make_inverse_map(attrs)
         attrs['field_types'] = cls.make_field_types(attrs)
         attrs['__collection__'] = cls.make_collection_name(name, attrs)
@@ -62,6 +64,15 @@ class DocumentMeta(type):
         # pprint(attrs)
         # print '----------------------------------------'
         return type.__new__(cls, name, bases, attrs)
+
+    @classmethod
+    def check_field_map(cls, name, attrs):
+        # Can't use LOG since logging package probably isn't configured while
+        # models are being imported.
+        for field_name in attrs['structure']:
+            if field_name not in attrs['field_map']:
+                warnings.warn('%s.%s has no short name for %r'
+                              % (attrs['__module__'], name, field_name))
 
     @classmethod
     def make_inverse_map(cls, attrs):
@@ -137,7 +148,9 @@ class Document(object):
 
     #: Map of canonical field names to shortened field names. Automatically
     #: populated by metaclass.
-    field_map = {}
+    field_map = {
+        '_id': '_id'
+    }
 
     #: Map of shortened field names to canonical field names. Automatically
     #: populated by metaclass.
