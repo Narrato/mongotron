@@ -241,6 +241,8 @@ class Document(object):
             short = self.long_to_short(key)
             if short in dct:
                 self.__attributes[key] = dct[short]
+            elif key in dct:
+                self.__attributes[key] = dct[key]
             elif key in self.default_values:
                 self.set(key, field.make())
 
