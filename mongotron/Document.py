@@ -344,7 +344,8 @@ class Document(object):
         # construct the $set changes
         ops = self.__ops.copy()
         ops['$set'] = {self.long_to_short(key): self.__attributes[key]
-                       for key in self.__dirty_fields}
+                       for key in self.__dirty_fields
+                       if key in self.__attributes}
         return ops
 
 
