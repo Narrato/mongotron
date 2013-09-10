@@ -3,7 +3,6 @@ from __future__ import absolute_import
 
 import logging
 import warnings
-from collections import OrderedDict
 
 from bson.objectid import ObjectId, InvalidId
 
@@ -255,7 +254,7 @@ class Document(object):
         self.__identity = self.identity()
 
     def to_json_dict(self, **kwargs):
-        return OrderedDict()
+        return dict()
 
     def from_json_dict(self, json_dict):
         pass
@@ -343,9 +342,13 @@ class Document(object):
     def operations(self):
         # construct the $set changes
         ops = self.__ops.copy()
-        ops['$set'] = {self.long_to_short(key): self.__attributes[key]
-                       for key in self.__dirty_fields
-                       if key in self.__attributes}
+
+        x = {}
+        for key in self.__dirty_fields:
+            if key in self.__attributes:
+                x[self.long_to_short(key)] = self.__attributes[key]
+
+        ops['$set'] = x
         return ops
 
 
@@ -590,5 +593,8 @@ class Document(object):
     def document_as_dict(self):
         """Return a dict representation of the document suitable for encoding
         as BSON."""
-        return {self.long_to_short(key): val
-                for key, val in self.__attributes.iteritems()}
+        x = {}
+        for key, val in self.__attributes.iteritems():
+            x[self.long_to_short(key)] = val
+        return x
+

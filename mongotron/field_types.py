@@ -414,12 +414,20 @@ class SafeDictField(DictField):
         if isinstance(obj, list):
             return [cls._visit(e, fn) for e in obj]
         elif isinstance(obj, dict):
-            return {fn(k): cls._visit(v, fn) for k, v in obj.iteritems()}
+            
+            x={}
+            for k, v in obj.iteritems():
+                x[fn(k)] = cls._visit(v, fn)
+            #return {fn(k): cls._visit(v, fn) for k, v in obj.iteritems()}
+            return x
         return obj
 
     SUB_MAP = {ord('.'): 0xff04, ord('$'): 0xff0e}
-    RSUB_MAP = {v: k for k, v in SUB_MAP.iteritems()}
-
+    #RSUB_MAP = {v: k for k, v in SUB_MAP.iteritems()}
+    RSUB_MAP = {}
+    for k, v in SUB_MAP.iteritems():
+        RSUB_MAP[v] = k
+    
     @classmethod
     def _wrap(cls, k):
         if isinstance(k, basestring):
