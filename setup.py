@@ -5,7 +5,7 @@ from setuptools import setup
 
 setup(
 	name='mongotron',
-	version='0.3',
+	version='0.3.2',
 	description='Python mongodb ODM',
 	long_description=codecs.open('README', "r", "utf-8").read(),
 	author='Tony Million',
